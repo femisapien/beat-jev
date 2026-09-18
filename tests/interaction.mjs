@@ -208,7 +208,7 @@ for (let round = 1; round <= 5; round++) {
     });
     await page.locator(".turn-countdown").waitFor({ state: "visible" });
   }
-  assert.equal(games.at(-1).incomingShot, undefined, "Target stays hidden before automatic release");
+  assert.ok(games.at(-1).incomingShot == null, "Target stays hidden before automatic release");
   if (round === 1) await page.screenshot({ path: `work/${prefix}-countdown.png`, fullPage: true });
   const attack = (await (await responsePromise).json()).attack;
   await page.waitForTimeout(60);
