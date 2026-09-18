@@ -1,23 +1,31 @@
 import { chromium } from "@playwright/test";
 import * as THREE from "three";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const config = JSON.parse(readFileSync("shared/game.json", "utf8"));
 const browser = await chromium.launch({ channel: "chrome" });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
 const url = process.env.DEMO_URL || "http://127.0.0.1:5183";
 const commands = [],
   games = [],
   errors = [];
+const released = new Map(), reactionDelivery = new Map();
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("response", async (r) => {
   if (r.ok() && r.url().includes("/api/matches/"))
     try {
-      games.push(await r.json());
+      const game = await r.json();
+      games.push(game);
+      const number = game.activeShot?.number;
+      if (released.has(number) && !reactionDelivery.has(number))
+        reactionDelivery.set(number, Date.now() - released.get(number));
     } catch {}
 });
 let delay = false;
 await page.route("**/api/play", async (route) => {
   const b = route.request().postDataJSON();
   if (b.action === "shoot") {
+    released.set(b.number, Date.now());
     commands.push(b);
     if (delay) await new Promise((r) => setTimeout(r, 1200));
   }
@@ -67,6 +75,13 @@ await enabled("Next shot");
 assert.ok(Math.abs(commands[0].aim.x) < 0.005);
 assert.equal(commands[0].aim.y, 0.06);
 assert.notEqual(games.at(-1).shots[0].outcome, "wide");
+function checkDelivery(number) {
+  const ms = reactionDelivery.get(number);
+  assert.ok(ms < config.runupMs + config.flightMs,
+    `Penalty ${number}: reaction delivered in ${ms} ms, before the ball arrives`);
+  console.log(`Penalty ${number}: reaction reached browser in ${ms} ms`);
+}
+checkDelivery(1);
 await page.screenshot({ path: "work/center-fixed.png", fullPage: true });
 await page.getByRole("button", { name: "Next shot", exact: true }).click();
 const points = [
@@ -91,6 +106,7 @@ await enabled("Next shot");
 assert.ok(commands[1].path.length > 5);
 assert.ok(commands[1].path.some((p) => p.x < -0.1));
 assert.deepEqual(games.at(-1).shots[1].path, commands[1].path);
+checkDelivery(2);
 await page.getByRole("button", { name: "Next shot", exact: true }).click();
 delay = true;
 const target = project([0, 1.1, -6], box);

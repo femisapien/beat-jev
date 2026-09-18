@@ -1,25 +1,42 @@
 import os
 from pathlib import Path
-from psycopg import AsyncConnection
+from contextlib import asynccontextmanager
+from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 
-def connection():
-    return AsyncConnection.connect(
-        os.environ["DATABASE_URL"], row_factory=dict_row, connect_timeout=5
-    )
+async def reset(conn):
+    await conn.set_autocommit(False)
+
+
+pool = AsyncConnectionPool(
+    os.environ["DATABASE_URL"],
+    min_size=0,
+    max_size=3,
+    max_idle=30,
+    kwargs=dict(row_factory=dict_row, connect_timeout=5),
+    reset=reset,
+    open=False,
+)
+
+
+@asynccontextmanager
+async def connection():
+    await pool.open()
+    async with pool.connection() as conn:
+        yield conn
 
 
 async def migrate():
-    async with await connection() as conn:
+    async with connection() as conn:
         await conn.execute(
             (Path(__file__).resolve().parents[2] / "database/schema.sql").read_text()
         )
 
 
 async def create_match(match_id, owner, name):
-    async with await connection() as conn:
+    async with connection() as conn:
         await conn.execute(
             "INSERT INTO matches(id,owner_hash,name) VALUES(%s,%s,%s) ON CONFLICT(id) DO NOTHING",
             (match_id, owner, name),
@@ -28,7 +45,7 @@ async def create_match(match_id, owner, name):
 
 
 async def read_match(match_id, owner):
-    async with await connection() as conn:
+    async with connection() as conn:
         row = await (
             await conn.execute(
                 "SELECT * FROM matches WHERE id=%s AND owner_hash=%s", (match_id, owner)
@@ -40,7 +57,7 @@ async def read_match(match_id, owner):
 
 
 async def change_match(match_id, owner, change):
-    async with await connection() as conn:
+    async with connection() as conn:
         row = await (
             await conn.execute(
                 "SELECT * FROM matches WHERE id=%s AND owner_hash=%s FOR UPDATE",
@@ -57,7 +74,7 @@ async def change_match(match_id, owner, change):
 
 
 async def totals(owner):
-    async with await connection() as conn:
+    async with connection() as conn:
         return await (
             await conn.execute(
                 "SELECT count(*)::int AS attempts, count(*) FILTER (WHERE shot->>'outcome'='goal')::int AS goals FROM matches, jsonb_array_elements(state->'shots') shot WHERE owner_hash=%s AND shot ? 'outcome'",

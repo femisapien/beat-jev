@@ -10,9 +10,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from app.store import migrate, read_match, totals
+from app.store import migrate, read_match, totals, pool
 from app.game import public_game
-from app.runs import render, WORKFLOW, read_trace
+from app.runs import render, WORKFLOW, read_trace, client
 from app.inputs import prepare_input, release_input, read_input, public_turn
 
 
@@ -20,6 +20,8 @@ from app.inputs import prepare_input, release_input, read_input, public_turn
 async def lifespan(app):
     await migrate()
     yield
+    await pool.close()
+    await client.aclose()
 
 
 app = FastAPI(lifespan=lifespan)

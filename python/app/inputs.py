@@ -8,7 +8,7 @@ from app.game import CONFIG
 
 
 async def prepare_input(match_id, number):
-    async with await connection() as conn:
+    async with connection() as conn:
         return await (
             await conn.execute(
                 """INSERT INTO penalty_inputs(match_id,number,id,expires_at)
@@ -22,7 +22,7 @@ async def prepare_input(match_id, number):
 
 async def read_input(match_id, number=None, conn=None):
     if conn is None:
-        async with await connection() as db:
+        async with connection() as db:
             return await read_input(match_id, number, db)
     return await (
         await conn.execute(
@@ -33,7 +33,7 @@ async def read_input(match_id, number=None, conn=None):
 
 
 async def release_input(match_id, number, data, released_at=None):
-    async with await connection() as conn:
+    async with connection() as conn:
         row = await (
             await conn.execute(
                 """UPDATE penalty_inputs SET input=COALESCE(input,%s), released_at=COALESCE(released_at,to_timestamp(%s::double precision/1000))
@@ -57,7 +57,7 @@ async def release_input(match_id, number, data, released_at=None):
 
 
 async def wait_for_input(cmd, actor):
-    async with await connection() as conn:
+    async with connection() as conn:
         await conn.set_autocommit(True)
         await conn.execute(
             f"UPDATE penalty_inputs SET {actor}_ready=true WHERE id=%s",
@@ -77,7 +77,7 @@ async def wait_for_input(cmd, actor):
 
 
 async def save_reaction(input_id, shot):
-    async with await connection() as conn:
+    async with connection() as conn:
         row = await (
             await conn.execute(
                 "UPDATE penalty_inputs SET reaction=COALESCE(reaction,%s) WHERE id=%s RETURNING reaction",
