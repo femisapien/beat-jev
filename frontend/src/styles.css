@@ -418,7 +418,8 @@ h1 {
   pointer-events: none;
   font-size: 73px;
   font-weight: 800;
-  letter-spacing: -3px;
+  letter-spacing: -0.025em;
+  word-spacing: 0.1em;
   color: #ebf7df;
   text-shadow: 0 3px 25px #0c251da8;
   animation: result-in 0.2s ease-out;

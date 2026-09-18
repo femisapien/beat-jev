@@ -137,7 +137,10 @@ export default function Trace({
       </div>
       {trace && (
         <details className="match-run-id">
-          <summary>Match run · {trace.status}</summary>
+          <summary title={`Render status: ${trace.status}`}>
+            Match run ·{" "}
+            {trace.status === "paused" ? "waiting on tasks" : trace.status}
+          </summary>
           <code>{trace.id}</code>
         </details>
       )}
@@ -157,6 +160,11 @@ export default function Trace({
                 {spans
                   .filter((s) =>
                     ["register_player", "begin_match"].includes(s.name),
+                  )
+                  .sort(
+                    (a, b) =>
+                      (Date.parse(a.startedAt || "") || Infinity) -
+                      (Date.parse(b.startedAt || "") || Infinity),
                   )
                   .map(row)}
               </ol>
