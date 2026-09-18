@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.store import migrate, read_match, totals, pool, start_run
 from app.game import public_game
+from app.flight import DEFAULT_KICK, flight_path
 from app.runs import render, WORKFLOW, read_trace, client
 from app.inputs import release_input, read_input, public_turn, save_defense
 
@@ -40,6 +41,12 @@ class PathPoint(BaseModel):
     y: float = Field(ge=0.035, le=5)
 
 
+class Kick(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+    power: float = Field(ge=0.2, le=1)
+    curl: float = Field(ge=-1, le=1)
+
+
 class Play(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: Literal["start", "shoot", "ready", "defend"]
@@ -47,6 +54,7 @@ class Play(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=24)
     number: int | None = Field(default=None, ge=1, le=10, strict=True)
     aim: Aim | None = None
+    kick: Kick | None = None
     releasedAt: float | None = Field(default=None, allow_inf_nan=False)
     path: list[PathPoint] | None = Field(default=None, min_length=2, max_length=32)
 
@@ -128,7 +136,7 @@ async def play(request: Request):
                 await release_input(
                     cmd["matchId"],
                     body.number,
-                    dict(aim=slot["attack"]["aim"], path=slot["attack"]["path"]),
+                    dict(aim=slot["attack"]["aim"], path=slot["attack"]["path"], kick=slot["attack"].get("kick", DEFAULT_KICK)),
                 )
             except ValueError as e:
                 return JSONResponse(dict(error=str(e)), 409)
@@ -152,18 +160,14 @@ async def play(request: Request):
             if body.aim is None:
                 return JSONResponse({"error": "Invalid shot path."}, 400)
             aim = body.aim.model_dump()
-            path = (
-                [p.model_dump() for p in body.path]
-                if body.path
-                else [dict(x=0, y=0.06), aim]
-            )
-            if path[-1] != aim:
-                return JSONResponse({"error": "Invalid shot path."}, 400)
+            kick = body.kick.model_dump() if body.kick else DEFAULT_KICK
+            # Ignore legacy waypoints and rebuild a bounded flight on the server.
+            path = flight_path(aim, kick)
             try:
                 await release_input(
                     cmd["matchId"],
                     body.number,
-                    dict(aim=aim, path=path),
+                    dict(aim=aim, path=path, kick=kick),
                     body.releasedAt,
                 )
                 return JSONResponse(dict(released=True), 202)

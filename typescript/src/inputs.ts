@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pool } from "./store";
 import config from "../../shared/game.json";
-import type { Aim, Command, Shot } from "../../shared/types";
+import type { Kick, Aim, Command, Shot } from "../../shared/types";
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function prepareInput(matchId: string, number: number) {
   await pool.query(
@@ -22,7 +22,7 @@ export async function readInput(matchId: string, number?: number) {
 export async function releaseInput(
   matchId: string,
   number: number,
-  input: { aim: Aim; path: Aim[] },
+  input: { aim: Aim; path: Aim[]; kick?: Kick },
   releasedAt = Date.now(),
 ) {
   const { rows } = await pool.query(
@@ -40,7 +40,12 @@ export async function releaseInput(
   const same = (a: Aim[], b: Aim[]) =>
     a.length === b.length &&
     a.every((p, i) => p.x === b[i].x && p.y === b[i].y);
-  if (!same([row.input.aim], [input.aim]) || !same(row.input.path, input.path))
+  if (
+    !same([row.input.aim], [input.aim]) ||
+    !same(row.input.path, input.path) ||
+    row.input.kick?.power !== input.kick?.power ||
+    row.input.kick?.curl !== input.kick?.curl
+  )
     throw new Error("This penalty is already committed.");
   return row;
 }

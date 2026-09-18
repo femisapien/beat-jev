@@ -25,7 +25,7 @@ test("covered shots save, uncovered shots score, leaving an on-target shot score
   assert.equal(resolveShot({ x: 0.92, y: 0.92 }, "right_high").outcome, "goal");
   assert.equal(resolveShot({ x: 0, y: 0.4 }, "leave_wide").outcome, "goal");
 });
-test("wide shots cannot score or trigger a dive, even if the model misreads them", () => {
+test("wide shots cannot score but the keeper still follows an incorrect model decision", () => {
   for (const aim of [
     { x: 1.2, y: 0.5 },
     { x: 0, y: 1.1 },
@@ -33,7 +33,9 @@ test("wide shots cannot score or trigger a dive, even if the model misreads them
   ]) {
     const r = resolveShot(aim, "left_high");
     assert.equal(r.outcome, "wide");
-    assert.deepEqual(r.keeper, { x: 0, y: 0.4 });
+    assert.equal(keeperMove(aim, "left_high").keeperAction, "dive");
+    assert.equal(r.keeper.x, -0.62);
+    assert.equal(keeperMove(aim, "leave_wide").keeperAction, "hold");
   }
 });
 test("submission locks the target before inference and retries preserve the outcome", () => {

@@ -8,12 +8,7 @@ CONFIG = json.loads(
 
 
 def keeper_move(aim, choice):
-    hold = (
-        abs(aim["x"]) > 0.965
-        or aim["y"] < 0.035
-        or aim["y"] > 0.965
-        or choice == "leave_wide"
-    )
+    hold = choice == "leave_wide"
     return dict(
         keeper={"x": 0, "y": 0.4} if hold else CONFIG["zones"][choice],
         keeperAction="hold" if hold else "dive",

@@ -248,6 +248,12 @@ export default function Trace({
             </span>
             <small>{shot.decision.durationMs} ms</small>
           </summary>
+          {shot.shooter !== "jev" && (
+            <p className="decision-note">
+              Estimated from {config.observationMs} ms of flight. Actual target
+              hidden.
+            </p>
+          )}
           <div className="probabilities">
             {Object.entries(shot.decision.probabilities)
               .sort((a, b) => b[1] - a[1])

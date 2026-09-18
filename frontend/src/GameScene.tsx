@@ -1,18 +1,19 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import * as THREE from "three";
 import Footballer from "./Footballer";
 import ShotInput from "./ShotInput";
 import Stadium from "./Stadium";
 import Football from "./Football";
-import { impactMs, endMs, type Playback } from "./playback";
+import { type Playback } from "./playback";
+import { ballAt, flightMs, impactTime, endTime } from "../../shared/flight";
 import config from "../../shared/game.json";
-import type { Aim } from "../../shared/types";
+import type { Aim, Kick } from "../../shared/types";
 
 type Props = {
   aim: Aim;
   onAim: (aim: Aim) => void;
-  onShoot: (aim: Aim, path?: Aim[]) => void;
+  onShoot: (aim: Aim, kick?: Kick) => void;
   ready: boolean;
   flight: Playback | null;
   onComplete: () => void;
@@ -31,30 +32,12 @@ function Ball({
 }) {
   const ref = useRef<THREE.Group>(null),
     done = useRef(false);
-  const curve = useMemo(
-    () =>
-      flight
-        ? new THREE.CatmullRomCurve3(
-            flight.path.map(
-              (p, i) =>
-                new THREE.Vector3(
-                  p.x * 3.66,
-                  p.y * 2.44,
-                  4.5 - (10.5 * i) / (flight.path.length - 1),
-                ),
-            ),
-            false,
-            "centripetal",
-          )
-        : null,
-    [flight?.startedAt],
-  );
   useLayoutEffect(() => {
     done.current = false;
   }, [flight?.startedAt]);
   useFrame(() => {
     if (!ref.current) return;
-    if (!flight || !curve) {
+    if (!flight) {
       ref.current.position.set(0, 0.14, 4.5);
       ref.current.rotation.set(0, 0, 0);
       return;
@@ -63,14 +46,14 @@ function Ball({
     const t = reducedMotion
       ? 1
       : THREE.MathUtils.clamp(
-          (elapsed - config.runupMs) / config.flightMs,
+          (elapsed - config.runupMs) / flightMs(flight.kick),
           0,
           1,
         );
-    const position = curve.getPoint(t);
+    const position = ballAt(flight.aim, flight.kick, t);
     const bounce =
       flight.reaction?.outcome === "saved" && t === 1
-        ? THREE.MathUtils.clamp((elapsed - impactMs) / 300, 0, 1)
+        ? THREE.MathUtils.clamp((elapsed - impactTime(flight.kick)) / 300, 0, 1)
         : 0;
     ref.current.position.set(
       position.x,
@@ -78,7 +61,7 @@ function Ball({
       position.z + bounce * 1.3,
     );
     ref.current.rotation.set(-t * 12, 0, t * 5);
-    if ((elapsed >= endMs || reducedMotion) && !done.current) {
+    if ((elapsed >= endTime(flight.kick) || reducedMotion) && !done.current) {
       done.current = true;
       onComplete();
     }

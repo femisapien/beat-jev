@@ -14,7 +14,9 @@ TypeSafe's <a href="https://docs.typesafe.ai/concepts/state" target="_blank" rel
 
 ## Prompt checks
 
-The first reactive version received only numeric crossing coordinates. It chose the expected action in 13 of 16 live cases, with errors on high, below-goal and near-center shots. The revised version adds calculated horizontal lane, height and whether the path enters the goal. It matched all 16 cases in one live run. These are smoke tests, not a statistically reliable accuracy estimate. Run `tests/keeper-live.ts` to repeat the checks against the current model.
+The previous reactive version supplied the exact destination and calculated lane/height labels. That made the goalkeeper an oracle. It is replaced by early-flight observations and a rough velocity-based range. Local rendering uses a bounded ballistic arc with curl, and the inference call waits until the observed 160 ms has elapsed.
+
+Live probes on 18 September 2026: raw early coordinates matched 6/16 expected actions; adding velocity and asking Jev to do the extrapolation matched 3/16. Supplying a range calculated solely from those observations and explicit zone bounds matched 14/16 in a subsequent probe. A follow-up probe matched 14/18 after adding two curling shots, both of which fooled the early-flight estimate and drew Jev to the wrong zone. These small probes informed the prompt; they are not held-out accuracy evidence. The range can be wrong on curved shots. `tests/keeper-live.ts` reports prediction quality diagnostically and checks the response contract. Deterministic tests check the information boundary and matching Python/TypeScript motion.
 
 ## Characters and stadium
 

@@ -1,6 +1,7 @@
 import { TypeSafeClient, choice, type JsonValue } from "@typesafe-ai/sdk";
+import { keeperObservation, type BallSample } from "../../shared/flight";
 import config from "../../shared/game.json";
-import type { Aim, Decision, Shot } from "../../shared/types";
+import type { Decision, Shot } from "../../shared/types";
 async function decide(
   state: Record<string, JsonValue>,
   question: string,
@@ -46,23 +47,13 @@ export function decideShot(history: Shot[]): Promise<Decision> {
   );
 }
 export async function decideKeeper(
-  aim: Aim,
-  path: Aim[] = [],
+  samples: BallSample[],
   timeout = 10000,
 ): Promise<Decision> {
-  const state = {
-    ball: {
-      projectedCrossing: aim,
-      trajectory: path,
-      horizontal: aim.x < -0.31 ? "left" : aim.x > 0.31 ? "right" : "center",
-      height: aim.y < 0.505 ? "low" : "high",
-      path:
-        Math.abs(aim.x) > 0.965 || aim.y < 0.035 || aim.y > 0.965
-          ? "outside the goal"
-          : "on target",
-    },
-    coordinates:
-      "Shooter view: x=-1 left post, x=0 center, x=1 right post. y=0 grass, y=1 crossbar. The crossing is computed by the game, not inferred from an image.",
-  };
-  return decide(state, config.question, config.criteria, timeout);
+  return decide(
+    keeperObservation(samples),
+    config.question,
+    config.criteria,
+    timeout,
+  );
 }

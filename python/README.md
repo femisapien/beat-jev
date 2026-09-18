@@ -18,7 +18,7 @@ The Blueprint creates a paid web service, a usage-billed workflow with all eleve
 ## Play
 
 1. Enter a nickname and press **Play**.
-2. Tap a spot or draw a path. Release to kick. Arrow keys and Space also work.
+2. Tap to aim, or swipe for power and curl. Release to kick. Arrow keys and Space also work.
 3. Roles swap automatically. A short countdown announces Jev’s kick. Use Left/Right to move and hold Space to jump, or use the touch controls.
 4. Five kicks each. Most goals wins. Press **Try again** for a new match.
 

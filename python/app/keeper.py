@@ -1,26 +1,13 @@
 from time import perf_counter
 from typesafe_sdk import AsyncTypeSafeClient, Choice, RetryPolicy
 from app.game import CONFIG
+from app.flight import keeper_observation
 
 
-async def decide_keeper(aim, path=None, timeout=10):
-    state = dict(
-        ball=dict(
-            projectedCrossing=aim,
-            trajectory=path or [],
-            horizontal="left"
-            if aim["x"] < -0.31
-            else "right"
-            if aim["x"] > 0.31
-            else "center",
-            height="low" if aim["y"] < 0.505 else "high",
-            path="outside the goal"
-            if abs(aim["x"]) > 0.965 or aim["y"] < 0.035 or aim["y"] > 0.965
-            else "on target",
-        ),
-        coordinates="Shooter view: x=-1 left post, x=0 center, x=1 right post. y=0 grass, y=1 crossbar. The crossing is computed by the game, not inferred from an image.",
+async def decide_keeper(samples, timeout=10):
+    return await decide(
+        keeper_observation(samples), CONFIG["question"], CONFIG["criteria"], timeout
     )
-    return await decide(state, CONFIG["question"], CONFIG["criteria"], timeout)
 
 
 async def decide_shot(history):

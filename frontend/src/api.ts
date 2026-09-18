@@ -37,6 +37,7 @@ export type Play = {
   number?: number;
   aim?: { x: number; y: number };
   path?: { x: number; y: number }[];
+  kick?: { power: number; curl: number };
   releasedAt?: number;
 };
 export type Session = {
@@ -44,4 +45,4 @@ export type Session = {
   runId?: string;
   command: Play;
 };
-export const sessionKey = "beat-jev-v4-" + language;
+export const sessionKey = "beat-jev-v5-" + language;

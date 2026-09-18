@@ -1,7 +1,7 @@
 {
   "shots": 5,
-  "rulesVersion": "penalty-v4",
-  "question": "You are the goalkeeper reacting to the CURRENT ball. Which defensive action fits the observed path? The game has already calculated ball.horizontal, ball.height and ball.path from its trajectory. Use those observations, not mental arithmetic. Directions are from the SHOOTER'S viewpoint, exactly as seen on the screen; never mirror left and right. If ball.path is outside the goal, stay upright and leave it. Otherwise defend the observed horizontal lane at the observed height. A corner may still be beyond your reach; attempt the matching defensive move anyway. Do not predict another shot, infer player habits, or choose a different zone for variety.",
+  "rulesVersion": "penalty-v5",
+  "question": "Choose a goalkeeper action using estimate.horizontalRange and estimate.heightRange, which are rough future goal-line ranges in metres inferred from 160 ms of observed flight. The real target is hidden. Curl can make the estimate wrong. Do NOT defend the ball's current position in the samples: it is still far from goal. Compare the ESTIMATED RANGE with the zones described below and choose the best coverage. Positive x means RIGHT on screen, negative x LEFT. Leave the ball only if the estimated range mostly misses the goal.",
   "zones": {
     "left_low": {
       "x": -0.62,
@@ -39,16 +39,15 @@
     "y": 0.3
   },
   "criteria": {
-    "left_low": "Defend the left of the goal at low height. Use for an on-target ball observed left and low, including corners on that side. Directions are from the shooter's viewpoint.",
-    "left_high": "Defend the left of the goal at high height. Use for an on-target ball observed left and high, including corners on that side. Directions are from the shooter's viewpoint.",
-    "center_low": "Defend the center of the goal at low height. Use for an on-target ball observed center and low, including corners on that side. Directions are from the shooter's viewpoint.",
-    "center_high": "Defend the center of the goal at high height. Use for an on-target ball observed center and high, including corners on that side. Directions are from the shooter's viewpoint.",
-    "right_low": "Defend the right of the goal at low height. Use for an on-target ball observed right and low, including corners on that side. Directions are from the shooter's viewpoint.",
-    "right_high": "Defend the right of the goal at high height. Use for an on-target ball observed right and high, including corners on that side. Directions are from the shooter's viewpoint.",
-    "leave_wide": "Stay upright and let the ball pass. Use only when ball.path says outside the goal, including beside either post, above the crossbar, or below the grass."
+    "left_low": "Defend left low: estimated horizontalRange is negative x, between -3.66 and -1.1 metres; estimated heightRange is height between 0 and 1.22 metres.",
+    "left_high": "Defend left high: estimated horizontalRange is negative x, between -3.66 and -1.1 metres; estimated heightRange is height between 1.22 and 2.44 metres.",
+    "center_low": "Defend center low: estimated horizontalRange is x near zero, between -1.1 and +1.1 metres; estimated heightRange is height between 0 and 1.22 metres.",
+    "center_high": "Defend center high: estimated horizontalRange is x near zero, between -1.1 and +1.1 metres; estimated heightRange is height between 1.22 and 2.44 metres.",
+    "right_low": "Defend right low: estimated horizontalRange is positive x, between +1.1 and +3.66 metres; estimated heightRange is height between 0 and 1.22 metres.",
+    "right_high": "Defend right high: estimated horizontalRange is positive x, between +1.1 and +3.66 metres; estimated heightRange is height between 1.22 and 2.44 metres.",
+    "leave_wide": "Stay upright when the estimated range mostly falls outside x=-3.66 to +3.66 metres or height=0 to 2.44 metres. The estimate can be wrong."
   },
   "reactionWindowMs": 850,
-  "flightMs": 1300,
   "runupMs": 180,
   "readySeconds": 90,
   "shootQuestion": "You are Jev, taking a penalty against a human goalkeeper. Choose one target to score. You can see ONLY completed turns in history. Look for areas the goalkeeper leaves uncovered. With no history, choose a corner. The human has not moved for this turn: never claim to know their current position. Directions are from the shooter viewpoint, the same left and right as the screen. Return one attacking target.",
@@ -59,5 +58,6 @@
     "center_high": "Shoot high center. Target x=0, y=0.76. Favor this target when completed goalkeeper movements leave it uncovered.",
     "right_low": "Shoot low right. Target x=0.62, y=0.25. Favor this target when completed goalkeeper movements leave it uncovered.",
     "right_high": "Shoot high right. Target x=0.62, y=0.76. Favor this target when completed goalkeeper movements leave it uncovered."
-  }
+  },
+  "observationMs": 160
 }

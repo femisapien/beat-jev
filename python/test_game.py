@@ -28,12 +28,11 @@ class GameTests(unittest.TestCase):
             resolve_shot(dict(x=0, y=0.4), "leave_wide")["outcome"], "goal"
         )
 
-    def test_wide_stays(self):
+    def test_wide_does_not_override_model(self):
         for aim in [dict(x=1.2, y=0.5), dict(x=0, y=1.1), dict(x=0, y=-0.1)]:
-            self.assertEqual(
-                resolve_shot(aim, "left_high"),
-                dict(outcome="wide", keeper=dict(x=0, y=0.4)),
-            )
+            self.assertEqual(resolve_shot(aim, "left_high")["outcome"], "wide")
+            self.assertEqual(keeper_move(aim, "left_high")["keeperAction"], "dive")
+            self.assertEqual(keeper_move(aim, "leave_wide")["keeperAction"], "hold")
 
     def test_retry_locks_target(self):
         s = state()

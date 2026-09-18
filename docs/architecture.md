@@ -19,7 +19,7 @@ flowchart TD
 
 ## Playing
 
-- **Your kick:** tap a target or draw a path. Release starts the local animation immediately. Jev sees the current path and calculated lane/height, then chooses a typed defensive action.
+- **Your kick:** tap a target or swipe for power and curl. Release starts the local animation immediately. Both APIs rebuild a smooth bounded arc, ignoring legacy waypoints. The goalkeeper task waits for the 180 ms run-up plus 160 ms of ball flight, then sends only three past positions, measured velocity, and an estimated goal-line range to Jev. The actual target and complete path remain inside the game.
 - **Jev's kick:** Jev chooses a typed target using only completed goalkeeper history. That target is stored before the countdown starts. The API does not reveal it until automatic release. Use Left/Right or A/D to move; hold Space, Up, or W to jump. Touch buttons provide the same controls. The keeper position is frozen at impact and submitted once.
 - Five kicks each, most goals wins. Equal scores are a draw. **Try again** starts a new root run and keeps this browser's human goals/attempts.
 
@@ -29,7 +29,7 @@ The white kit is always you; purple is always Jev. The players swap roles. Resul
 
 Results stay visible for 1.2 seconds, then roles switch automatically once the next Render turn is ready. Jev’s committed shot releases after a 3-2-1 countdown (2.1 seconds). The player can position the goalkeeper during that countdown. Automatic transitions stop when the pitch is out of view, the tab is hidden, or help is open; a returning player gets a fresh countdown. A shot already in flight continues under the existing server deadlines.
 
-Jev has 850 ms from your release to choose a save. Browser clock calibration is approximate; network transit and inference consume that window. A late or unavailable answer cannot save. The ball takes 180 ms of run-up and 1,300 ms of flight. The browser does not restart the ball clock when a decision arrives. The keeper moves toward Jev's chosen zone, never the exact shot coordinates. A fast decision waits until the final 650 ms of flight to dive, reaching the zone at ball arrival. Late browser delivery still requires at least 450 ms of movement. Saves use the zone's reach area, not a simulated glove collision.
+Jev has 850 ms from your release to choose a save. Browser clock calibration is approximate; network transit and inference consume that window. A late or unavailable answer cannot save. The ball takes 180 ms of run-up and 1,200 to 1,400 ms of flight depending on power (1,300 ms for taps). The browser does not restart the ball clock when a decision arrives. The keeper moves toward Jev's chosen zone, never the exact shot coordinates. A fast decision waits until the final 650 ms of flight to dive, reaching the zone at ball arrival. The game no longer overrides a dive when the true target is wide: Jev can misjudge a miss. Late browser delivery still requires at least 450 ms of movement. Saves use the zone's reach area, not a simulated glove collision.
 
 For your save, controls stop at impact. The API allows five seconds from release for the final position to arrive. Missing input counts as a missed save. This is a browser game demonstration, not an authoritative multiplayer or anti-cheat system. A client could forge its position. AI and human turns also use different decision windows, so scores do not measure general intelligence.
 
@@ -60,3 +60,5 @@ render blueprints validate python/render.yaml
 ```
 
 Live tests call TypeSafe, Render, and Postgres. They verify a complete match, one root with sequential penalty descendants and overlapping player/keeper children, hidden targets, keyboard/touch controls, timing, score integrity, retries, ownership, reload, and Try again. These are implementation checks, not a novice usability study. GitHub may strip README new-tab attributes; app links use them directly.
+
+The early-flight estimator uses finite-difference velocity and gravity, without assuming future sideways acceleration. Its fixed range margins (0.6 m horizontally, 0.25 m vertically) are gameplay heuristics, not calibrated confidence intervals. Curl can fool it. Jev chooses coverage from this estimate, not from video, the actual endpoint, or a preselected zone. `shared/flight.ts` and `python/app/flight.py` implement the same motion and observation boundary; parity tests cover both. This is still an arcade simulation with six defensive zones, not a football physics engine.

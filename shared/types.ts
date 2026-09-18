@@ -1,3 +1,4 @@
+export type Kick = { power: number; curl: number };
 export type Aim = { x: number; y: number };
 export type Decision = {
   choice: string;
@@ -11,6 +12,7 @@ export type Shot = {
   number: number;
   shooter?: "player" | "jev";
   path?: Aim[];
+  kick?: Kick;
   reaction?: "ready" | "late" | "unavailable";
   reactionMs?: number;
   decision?: Decision;
@@ -58,6 +60,7 @@ export type Command = {
   number?: number;
   aim?: Aim;
   path?: Aim[];
+  kick?: Kick;
   inputId?: string;
 };
 export type Turn = {

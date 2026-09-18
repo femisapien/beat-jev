@@ -19,20 +19,14 @@ import { language, serverTime } from "./api";
 import useGame from "./useGame";
 import useKeeperControls from "./useKeeperControls";
 import useTurnFlow from "./useTurnFlow";
-import {
-  directPath,
-  groundAim,
-  missLabel,
-  endMs,
-  impactMs,
-  type Playback,
-} from "./playback";
+import { directPath, groundAim, missLabel, type Playback } from "./playback";
 import { ProjectLinks, PoweredByRender } from "./ProjectLinks";
 import Panel from "./Panel";
 import WorkflowProgress from "./WorkflowProgress";
 import Trace from "./Trace";
 import { renderLink } from "../../shared/links";
-import type { Aim, Shot } from "../../shared/types";
+import type { Aim, Kick, Shot } from "../../shared/types";
+import { defaultKick, impactTime, endTime } from "../../shared/flight";
 const GameScene = lazy(() => import("./GameScene"));
 class SceneBoundary extends Component<
   { children: ReactNode },
@@ -79,7 +73,8 @@ export default function App() {
     turn,
     view,
     ready,
-    nextReady: !!game?.ready && !!game.turn?.ready && game.turn.number === turn + 1,
+    nextReady:
+      !!game?.ready && !!game.turn?.ready && game.turn.number === turn + 1,
     completed,
     paused: about || !!error || !!game?.abandoned,
     next,
@@ -89,7 +84,8 @@ export default function App() {
     (keeperActive || countdown !== null) && inView && !about,
   );
   useEffect(() => {
-    if (ready && inView && !about) stage.current?.focus({ preventScroll: true });
+    if (ready && inView && !about)
+      stage.current?.focus({ preventScroll: true });
   }, [ready, turn, inView, about]);
   useEffect(() => {
     const m = matchMedia("(prefers-reduced-motion: reduce)");
@@ -104,10 +100,11 @@ export default function App() {
       shooter: "jev",
       aim: shot.aim!,
       path: shot.path!,
+      kick: shot.kick,
       startedAt: performance.now() - elapsed,
     });
     setLanded(false);
-    setKeeperActive(elapsed < impactMs);
+    setKeeperActive(elapsed < impactTime(shot.kick));
     setView("flight");
   }
   useEffect(() => {
@@ -128,7 +125,8 @@ export default function App() {
         shooter: latest.shooter,
         aim: latest.aim!,
         path: latest.path || directPath(latest.aim!),
-        startedAt: performance.now() - endMs,
+        kick: latest.kick,
+        startedAt: performance.now() - endTime(latest.kick),
         reaction: latest,
         keeperStartedAt: performance.now() - 500,
       });
@@ -156,7 +154,10 @@ export default function App() {
     if (!flight || view !== "flight") return;
     const timer = setTimeout(
       () => setLanded(true),
-      Math.max(0, endMs - (performance.now() - flight.startedAt)),
+      Math.max(
+        0,
+        endTime(flight.kick) - (performance.now() - flight.startedAt),
+      ),
     );
     return () => clearTimeout(timer);
   }, [flight?.startedAt, view]);
@@ -173,7 +174,10 @@ export default function App() {
           aim: controls.position.current,
         });
       },
-      Math.max(0, impactMs - (performance.now() - flight.startedAt)),
+      Math.max(
+        0,
+        impactTime(flight.kick) - (performance.now() - flight.startedAt),
+      ),
     );
     return () => clearTimeout(timer);
   }, [flight?.startedAt]);
@@ -195,10 +199,10 @@ export default function App() {
       name: name.trim() || "Guest",
     });
   }
-  function shoot(target: Aim, path?: Aim[]) {
+  function shoot(target: Aim, kick: Kick = defaultKick) {
     if (!ready || !game || defending) return;
     const a = groundAim(target),
-      trajectory = path || directPath(a),
+      trajectory = directPath(a, kick),
       number = game.attempts + 1;
     seen.current = number;
     setAim(a);
@@ -209,6 +213,7 @@ export default function App() {
       shooter: "player",
       aim: a,
       path: trajectory,
+      kick,
       startedAt: performance.now(),
     });
     void dispatch({
@@ -217,6 +222,7 @@ export default function App() {
       number,
       aim: a,
       path: trajectory,
+      kick,
       releasedAt: serverTime(),
     });
   }
@@ -412,7 +418,7 @@ export default function App() {
                   <div className="aim-hint">
                     {defending
                       ? "← → Move · Hold Space to jump"
-                      : "Tap a spot or draw a path · Release to shoot"}
+                      : "Tap to aim · Swipe for power and curl"}
                   </div>
                 )}
               </div>
@@ -609,10 +615,11 @@ export default function App() {
         <Panel title="How it works" close={() => setAbout(false)}>
           <h2>Five kicks each.</h2>
           <p>
-            Tap or draw your shot. Jev has 850 ms to react. Then swap: Jev
-            chooses a target. After the countdown, use Left/Right and Space to
-            keep it out.
-            Most goals wins; equal scores are a draw.
+            Tap to aim. A faster swipe adds power; a curved swipe adds curl. Jev
+            sees the first 160 ms of flight and has 850 ms from release to
+            decide. Then swap: Jev chooses a target. After the countdown, use
+            Left/Right and Space to keep it out. Most goals wins; equal scores
+            are a draw.
           </p>
           <ol>
             <li>
@@ -621,9 +628,10 @@ export default function App() {
               score.
             </li>
             <li>
-              <strong>TypeSafe Jev</strong> chooses saves and shot targets. His
-              target is committed before your current keeper movement. Completed
-              turns are the only history he sees.
+              <strong>TypeSafe Jev</strong> chooses a save from a rough landing
+              range, estimated from early ball positions. The actual target is
+              hidden. When shooting, his target is committed before your current
+              keeper movement. Completed turns are the only history he sees.
             </li>
             <li>
               <strong>Render Postgres</strong> keeps your shots and score.
@@ -636,11 +644,14 @@ export default function App() {
             run the animation frames on Render.
           </p>
           <p className="muted">
-            A nickname is enough. Your record belongs to this browser. Current
-            shot coordinates go to TypeSafe; your nickname is not sent. The side
-            panel shows real task runs and Jev’s latest decision.
+            A nickname is enough. Your record belongs to this browser. Early
+            ball positions and their estimated landing range go to TypeSafe;
+            your nickname is not sent. The side panel shows real task runs and
+            Jev’s latest decision.
           </p>
-          <a href="/credits.html" target="_blank" rel="noopener noreferrer">Asset credits ↗</a>
+          <a href="/credits.html" target="_blank" rel="noopener noreferrer">
+            Asset credits ↗
+          </a>
         </Panel>
       )}
     </div>

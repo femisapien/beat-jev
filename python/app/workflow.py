@@ -4,6 +4,7 @@ from render import Retry, TaskContext, Workflows
 from app.store import create_match, change_match, read_match
 from app.keeper import decide_keeper, decide_shot
 from app.game import record, submit, keeper_move, resolve_shot, CONFIG
+from app.flight import DEFAULT_KICK, flight_path, observe_ball
 from app.inputs import (
     wait_for_input,
     read_input,
@@ -44,6 +45,7 @@ async def player_kick(ctx: TaskContext, cmd: dict):
     def accept(m):
         shot = submit(m["state"], cmd["number"], slot["input"]["aim"])
         shot["path"] = slot["input"]["path"]
+        shot["kick"] = slot["input"].get("kick", DEFAULT_KICK)
         return shot
 
     return await change_match(cmd["matchId"], cmd["owner"], accept)
@@ -58,17 +60,22 @@ async def goalkeeper_action(ctx: TaskContext, cmd: dict):
         return slot["reaction"]
     aim, path = slot["input"]["aim"], slot["input"]["path"]
 
+    kick = slot["input"].get("kick", DEFAULT_KICK)
+
     def elapsed():
         return round(
             (datetime.now(timezone.utc) - slot["released_at"]).total_seconds() * 1000
         )
 
-    shot = dict(number=cmd["number"], shooter="player", aim=aim, path=path)
+    shot = dict(number=cmd["number"], shooter="player", aim=aim, path=path, kick=kick)
+    # Do not observe simulated frames before their release time has elapsed.
+    observe_after = CONFIG["runupMs"] + CONFIG["observationMs"]
+    await asyncio.sleep(max(0, observe_after - elapsed()) / 1000)
     remaining = CONFIG["reactionWindowMs"] - elapsed()
     try:
         if remaining <= 0:
             raise TimeoutError("Deadline passed.")
-        shot["decision"] = await decide_keeper(aim, path, remaining / 1000)
+        shot["decision"] = await decide_keeper(observe_ball(aim, kick), remaining / 1000)
         shot["reaction"] = (
             "ready" if elapsed() <= CONFIG["reactionWindowMs"] else "late"
         )
@@ -119,11 +126,8 @@ async def jev_kick(ctx: TaskContext, cmd: dict):
                 shooter="jev",
                 aim=aim,
                 decision=decision,
-                path=[
-                    dict(x=0, y=0.06),
-                    dict(x=aim["x"] / 2, y=(aim["y"] + 0.06) / 2 + 0.3),
-                    aim,
-                ],
+                kick=DEFAULT_KICK,
+                path=flight_path(aim),
             ),
         )
     slot = await wait_for_input(cmd, "player")

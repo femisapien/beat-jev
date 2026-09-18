@@ -1,3 +1,4 @@
+import { defaultKick, flightPath, observeBall } from "../../shared/flight";
 import { task } from "@renderinc/sdk/workflows";
 import { createMatch, changeMatch, readMatch } from "./store";
 import { decideKeeper, decideShot } from "./keeper";
@@ -43,6 +44,7 @@ const playerKick = task(
     return changeMatch(cmd.matchId, cmd.owner, (m) => {
       const shot = submit(m.state, cmd.number!, slot.input.aim);
       shot.path = slot.input.path;
+      shot.kick = slot.input.kick || defaultKick;
       return shot;
     });
   },
@@ -53,13 +55,29 @@ const goalkeeperAction = task(
     const slot = await waitForInput(cmd, "keeper");
     if (!slot) return null;
     if (slot.reaction) return slot.reaction;
-    const { aim, path } = slot.input;
+    const { aim, path, kick = defaultKick } = slot.input;
     const released = new Date(slot.released_at).getTime();
-    const shot: Shot = { number: cmd.number!, shooter: "player", aim, path };
+    const shot: Shot = {
+      number: cmd.number!,
+      shooter: "player",
+      aim,
+      path,
+      kick,
+    };
+    // Observe only after these frames have happened in the released shot.
+    await new Promise((r) =>
+      setTimeout(
+        r,
+        Math.max(
+          0,
+          released + config.runupMs + config.observationMs - Date.now(),
+        ),
+      ),
+    );
     const remaining = config.reactionWindowMs - (Date.now() - released);
     try {
       if (remaining <= 0) throw new Error("Deadline passed.");
-      shot.decision = await decideKeeper(aim, path, remaining);
+      shot.decision = await decideKeeper(observeBall(aim, kick), remaining);
       shot.reaction =
         Date.now() - released <= config.reactionWindowMs ? "ready" : "late";
     } catch {
@@ -102,8 +120,7 @@ const jevKick = task(
   { ...settings, name: "jev_kick" },
   async (_ctx, cmd: Command) => {
     let attack = (await readInput(cmd.matchId, cmd.number!)).attack as
-      | Shot
-      | undefined;
+      Shot | undefined;
     if (!attack) {
       const match = await readMatch(cmd.matchId, cmd.owner);
       const decision = await decideShot(match.state.shots);
@@ -114,11 +131,8 @@ const jevKick = task(
         shooter: "jev",
         aim,
         decision,
-        path: [
-          { x: 0, y: 0.06 },
-          { x: aim.x / 2, y: (aim.y + 0.06) / 2 + 0.3 },
-          aim,
-        ],
+        kick: defaultKick,
+        path: flightPath(aim),
       });
     }
     const slot = await waitForInput(cmd, "player");

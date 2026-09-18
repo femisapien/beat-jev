@@ -1,3 +1,4 @@
+import { defaultKick, flightPath } from "../../shared/flight";
 import express from "express";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
@@ -56,6 +57,7 @@ app.post("/api/play", async (req, res) => {
             "number",
             "aim",
             "path",
+            "kick",
             "releasedAt",
           ].includes(k),
       )
@@ -97,6 +99,7 @@ app.post("/api/play", async (req, res) => {
         await releaseInput(b.matchId, b.number, {
           aim: slot.attack.aim,
           path: slot.attack.path,
+          kick: slot.attack.kick || defaultKick,
         });
         return res.status(202).json({ attack: slot.attack });
       } else if (b.action === "defend") {
@@ -124,22 +127,23 @@ app.post("/api/play", async (req, res) => {
           Math.abs(p.x) <= x &&
           p.y >= 0.035 &&
           p.y <= y;
-        const path = b.path || [{ x: 0, y: 0.06 }, b.aim];
+        const kick = b.kick || defaultKick;
         if (
           !point(b.aim, 1.6, 1.5) ||
-          !Array.isArray(path) ||
-          path.length < 2 ||
-          path.length > 32 ||
-          !path.every((p) => point(p, 4, 5)) ||
-          path.at(-1).x !== b.aim.x ||
-          path.at(-1).y !== b.aim.y
+          Object.keys(kick).sort().join() !== "curl,power" ||
+          ![kick.power, kick.curl].every(Number.isFinite) ||
+          kick.power < 0.2 ||
+          kick.power > 1 ||
+          Math.abs(kick.curl) > 1
         )
-          return res.status(400).json({ error: "Invalid shot path." });
+          return res.status(400).json({ error: "Invalid kick." });
+        // Legacy clients may send a path. Always rebuild it from bounded kick parameters.
+        const path = flightPath(b.aim, kick);
         try {
           await releaseInput(
             b.matchId,
             b.number,
-            { aim: b.aim, path },
+            { aim: b.aim, path, kick },
             Number.isFinite(b.releasedAt) ? b.releasedAt : Date.now(),
           );
           return res.status(202).json({ released: true });

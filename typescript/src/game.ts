@@ -2,11 +2,7 @@ import config from "../../shared/game.json";
 import type { Aim, Game, Match, Shot, State } from "../../shared/types";
 export const zones = config.zones as Record<string, Aim & { label: string }>;
 export function keeperMove(aim: Aim, choice: string) {
-  const hold =
-    Math.abs(aim.x) > 0.965 ||
-    aim.y < 0.035 ||
-    aim.y > 0.965 ||
-    choice === "leave_wide";
+  const hold = choice === "leave_wide";
   const keeper = hold ? { x: 0, y: 0.4 } : zones[choice];
   if (!keeper) throw new Error("Invalid keeper action.");
   return { keeper, keeperAction: hold ? ("hold" as const) : ("dive" as const) };

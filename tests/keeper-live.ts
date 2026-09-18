@@ -1,6 +1,7 @@
 // Calls the real TypeSafe API. Run explicitly: node --env-file=.env --import tsx tests/keeper-live.ts
 import assert from "node:assert/strict";
 import { decideKeeper } from "../typescript/src/keeper";
+import { observeBall, defaultKick } from "../shared/flight";
 import config from "../shared/game.json";
 const cases = [
   ...Object.entries(config.zones).map(([expected, z]) => ({
@@ -19,14 +20,31 @@ const cases = [
   { expected: "right_low", aim: { x: 0.9, y: 0.09 } },
   { expected: "center_low", aim: { x: -0.08, y: 0.18 } },
   { expected: "center_high", aim: { x: 0.09, y: 0.9 } },
+  {
+    expected: "left_low",
+    aim: { x: -0.62, y: 0.25 },
+    kick: { power: 0.6, curl: 1 },
+  },
+  {
+    expected: "right_high",
+    aim: { x: 0.62, y: 0.76 },
+    kick: { power: 1, curl: -1 },
+  },
 ];
 let correct = 0;
 for (const c of cases) {
-  const d = await decideKeeper(c.aim);
+  const d = await decideKeeper(
+    observeBall(c.aim, "kick" in c ? c.kick : defaultKick),
+  );
   correct += +(d.choice === c.expected);
+  assert.ok(d.choice in config.criteria);
+  assert.equal(d.state.observedMs, 160);
+  assert.ok(!JSON.stringify(d.state).includes("projectedCrossing"));
   console.log(
     JSON.stringify({
       aim: c.aim,
+      curl: "kick" in c ? c.kick.curl : 0,
+      estimate: d.state.estimate,
       expected: c.expected,
       choice: d.choice,
       confidence: d.confidence,
@@ -40,8 +58,8 @@ for (const c of cases) {
   );
 }
 console.log(`Keeper actions: ${correct}/${cases.length} matched`);
-assert.equal(
-  correct,
-  cases.length,
-  "Inspect model failures before releasing a prompt change.",
+// Partial observations can be wrong. Keep prediction quality visible instead of
+// turning expected model mistakes into a deterministic test of ground truth.
+console.log(
+  "Accuracy is diagnostic; the game must apply the returned action, including mistakes.",
 );

@@ -56,6 +56,20 @@ for (let number = 1; number <= 10; number++) {
       number,
       aim: number === 1 ? { x: 1.25, y: 0.5 } : { x: -0.62, y: 0.25 },
     };
+    if (number === 3) {
+      body.kick = { power: 1, curl: 1 };
+      body.path = [
+        { x: 0, y: 0.06 },
+        { x: 4, y: 5 },
+        { x: -4, y: 4 },
+        body.aim,
+      ];
+      assert.equal(
+        (await request("/play", { ...body, kick: { power: 2, curl: 1 } }))
+          .status,
+        400,
+      );
+    }
     const started = Date.now();
     assert.equal((await request("/play", body)).status, 202);
     g = await waitFor(
@@ -111,6 +125,33 @@ for (let number = 1; number <= 10; number++) {
   const shot = g.shots.at(-1);
   assert.equal(shot.shooter, number % 2 ? "player" : "jev");
   if (number === 1) assert.equal(shot.outcome, "wide");
+  if (number % 2) {
+    assert.equal(
+      shot.path.length,
+      17,
+      "Server replaces arbitrary paths with a bounded flight",
+    );
+    if (shot.decision) {
+      assert.equal(shot.decision.state.observedMs, 160);
+      assert.equal(shot.decision.state.ball.at(-1).ms, 160);
+      assert.ok(
+        shot.reactionMs >= 340,
+        "Observation cannot precede run-up and observed flight",
+      );
+      assert.ok(
+        !JSON.stringify(shot.decision.state).includes("projectedCrossing"),
+      );
+    }
+  }
+  if (number === 3) {
+    assert.deepEqual(shot.kick, { power: 1, curl: 1 });
+    assert.ok(shot.path.every((p) => Math.abs(p.x) < 2));
+    assert.equal(
+      (await request("/play", { ...body, kick: { power: 0.5, curl: 1 } }))
+        .status,
+      409,
+    );
+  }
   if (number % 2 === 0)
     assert.equal(shot.outcome, number === 4 ? "goal" : "saved");
   if (number <= 2) {
