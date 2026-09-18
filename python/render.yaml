@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+# Independent python deployment. Run all commands from the repository root.
+services:
+  - type: web
+    name: beat-jev-python-web
+    runtime: python
+    repo: https://github.com/ojusave/beat-jev
+    branch: main
+    region: oregon
+    plan: 0.5c-512mb
+    autoDeployTrigger: off
+    buildCommand: pip install uv && uv sync --project python --frozen && npm ci --include=dev && npm run build:python
+    startCommand: cd python && .venv/bin/python -m uvicorn app.server:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "10000"
+      - key: RENDER_API_KEY
+        sync: false
+      - key: RENDER_WORKFLOW_SLUG
+        fromService:
+          type: workflow
+          name: beat-jev-python
+          property: slug
+      - key: DATABASE_URL
+        fromDatabase:
+          name: beat-jev-python-db
+          property: connectionString
+
+  - type: workflow
+    name: beat-jev-python
+    runtime: python
+    repo: https://github.com/ojusave/beat-jev
+    branch: main
+    region: oregon
+    autoDeployTrigger: off
+    buildCommand: sh scripts/check-keys.sh && pip install uv && uv sync --project python --frozen
+    startCommand: cd python && .venv/bin/python -m app.workflow
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      - key: TYPESAFE_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: beat-jev-python-db
+          property: connectionString
+
+databases:
+  - name: beat-jev-python-db
+    region: oregon
+    plan: 0.1c-256mb
+    postgresMajorVersion: "18"
+    diskSizeGB: 1
+    ipAllowList: []

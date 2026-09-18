@@ -1,0 +1,5 @@
+[project]
+name = "beat-jev-python"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["render==1.1.0", "typesafe-sdk", "fastapi", "uvicorn", "httpx", "python-dotenv", "psycopg[binary,pool]"]

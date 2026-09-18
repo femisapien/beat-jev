@@ -1,0 +1,42 @@
+{
+  "name": "beat-jev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && vite build --mode typescript && vite build --mode python",
+    "check": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "start:api": "tsx typescript/src/server.ts",
+    "start:workflow": "tsx typescript/src/workflow.ts",
+    "dev:typescript": "node scripts/dev.mjs typescript",
+    "dev:python": "node scripts/dev.mjs python",
+    "build:typescript": "tsc --noEmit && vite build --mode typescript",
+    "build:python": "vite build --mode python",
+    "migrate": "tsx typescript/src/migrate.ts"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.7.0",
+    "@renderinc/sdk": "1.1.0",
+    "@typesafe-ai/sdk": "0.6.0",
+    "express": "5.2.1",
+    "lucide-react": "1.46.0",
+    "pg": "8.23.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/express": "5.0.6",
+    "@types/node": "26.6.1",
+    "@types/pg": "^8.15.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "^0.183.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vite": "8.3.0"
+  }
+}
