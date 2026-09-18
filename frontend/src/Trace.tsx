@@ -1,19 +1,27 @@
 import { useEffect, useState, useRef } from "react";
 import { Check, LoaderCircle, Circle, X } from "lucide-react";
-import type { Trace as TraceData, Shot, Span } from "../../shared/types";
+import type { Trace as TraceData, Shot, Span, Turn } from "../../shared/types";
 import config from "../../shared/game.json";
 const labels: Record<string, string> = {
   register_player: "Register player",
   begin_match: "Start match",
-  player_kick: "Player kicks",
-  goalkeeper_action: "Goalkeeper reacts",
+  player_kick: "Player input",
+  goalkeeper_action: "Jev decision",
   record_result: "Save result",
   finish_match: "Finish match",
 };
 const terminal = (s: string) => ["completed", "failed", "canceled"].includes(s);
 const seconds = (ms: number) =>
   ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
-function TaskRow({ span, now }: { span: Span; now: number }) {
+function TaskRow({
+  span,
+  now,
+  waiting,
+}: {
+  span: Span;
+  now: number;
+  waiting?: boolean;
+}) {
   const done = span.status === "completed",
     failed = ["failed", "canceled"].includes(span.status);
   const running = !!span.startedAt && !terminal(span.status);
@@ -40,11 +48,13 @@ function TaskRow({ span, now }: { span: Span; now: number }) {
       <div>
         <strong>{labels[span.name] || span.name}</strong>
         <small>
-          {span.status}
+          {waiting && running ? "Awaiting input · running" : span.status}
           {span.retries > 0 ? ` · retry ${span.retries}` : ""}
         </small>
       </div>
-      <time>{ms ? seconds(ms) : "Queued"}</time>
+      <time title="Task runtime, including time waiting for input">
+        {ms ? seconds(ms) : "Queued"}
+      </time>
     </li>
   );
 }
@@ -53,11 +63,15 @@ export default function Trace({
   history,
   shot,
   waiting,
+  turn,
+  released,
 }: {
   trace: TraceData | null;
   history: TraceData[];
   shot?: Shot;
   waiting?: boolean;
+  turn?: Turn;
+  released?: boolean;
 }) {
   const [now, setNow] = useState(Date.now());
   const list = useRef<HTMLDivElement>(null);
@@ -70,7 +84,7 @@ export default function Trace({
     const id = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(id);
   }, [running]);
-  const active = trace?.spans.find(
+  const active = trace?.spans.filter(
     (s) => s.id !== trace.id && !terminal(s.status),
   );
   const choice = shot?.decision?.choice;
@@ -82,15 +96,21 @@ export default function Trace({
         <span className={running ? "status-dot running" : "status-dot"} />
       </div>
       <div className="execution-status" aria-live="polite">
-        {active
-          ? `${labels[active.name] || active.name}…`
-          : running
-            ? "Waiting for Render…"
-            : trace?.status === "completed"
-              ? "Run complete"
-              : trace
-                ? "Needs retry"
-                : "Ready when you are"}
+        {turn?.ready
+          ? released
+            ? "Sending shot to tasks…"
+            : "Player and keeper ready · parallel"
+          : active && active.length > 1
+            ? `${active.length} tasks running in parallel`
+            : active?.length
+              ? `${labels[active[0].name] || active[0].name}…`
+              : running
+                ? "Waiting for Render…"
+                : trace?.status === "completed"
+                  ? "Run complete"
+                  : trace
+                    ? "Needs retry"
+                    : "Ready when you are"}
       </div>
       <div className="execution-runs" ref={list}>
         {!history.length ? (
@@ -124,11 +144,22 @@ export default function Trace({
               >
                 <div className="run-title">
                   <b>{title}</b>
-                  <span>{t.status}</span>
+                  <span title={`Render status: ${t.status}`}>
+                    {t.status === "paused" ? "Awaiting tasks" : t.status}
+                  </span>
                 </div>
                 <ol>
                   {children.map((s) => (
-                    <TaskRow key={s.id} span={s} now={now} />
+                    <TaskRow
+                      key={s.id}
+                      span={s}
+                      now={now}
+                      waiting={
+                        t.id === trace?.id &&
+                        turn?.number === t.number &&
+                        !turn?.submitted
+                      }
+                    />
                   ))}
                 </ol>
                 {!children.length && (
@@ -148,6 +179,21 @@ export default function Trace({
           })
         )}
       </div>
+      {shot?.reaction && (
+        <div className="reaction-window">
+          <span>
+            Jev{" "}
+            {shot.reaction === "ready"
+              ? "responded"
+              : shot.reaction === "late"
+                ? "could not react in time"
+                : "was unavailable"}
+          </span>
+          <strong>
+            {shot.reactionMs} / {config.reactionWindowMs} ms
+          </strong>
+        </div>
+      )}
       {shot?.decision && (
         <details className="keeper-decision">
           <summary>

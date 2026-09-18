@@ -18,10 +18,10 @@ The Blueprint creates a paid web service, a usage-billed workflow with all eight
 ## Play
 
 1. Enter a nickname and press **Play**.
-2. Tap the goal to shoot, or use arrow keys and Space.
+2. Tap a spot or draw a path. Release to kick. Arrow keys and Space also work.
 3. Take five penalties. Press **Try again** for a new match.
 
-The progress strip above the pitch follows your match. The **Render Workflows** panel shows each player and goalkeeper task live; expand Jev’s move for its input and response.
+Player input and Jev run in parallel. A late reaction cannot save. The progress strip follows your match. The **Render Workflows** panel shows each player and goalkeeper task live; expand Jev’s move for its input and response.
 
 ## Local development
 

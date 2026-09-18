@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.store import migrate, read_match, totals
 from app.game import public_game
 from app.runs import render, WORKFLOW, read_trace
+from app.inputs import prepare_input, release_input, read_input, public_turn
 
 
 @asynccontextmanager
@@ -28,16 +29,24 @@ limits = {}
 class Aim(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
     x: float = Field(ge=-1.6, le=1.6)
-    y: float = Field(ge=-0.4, le=1.5)
+    y: float = Field(ge=0.035, le=1.5)
+
+
+class PathPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+    x: float = Field(ge=-4, le=4)
+    y: float = Field(ge=0.035, le=5)
 
 
 class Play(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["start", "shoot"]
+    action: Literal["start", "arm", "shoot"]
     matchId: UUID
     name: str | None = Field(default=None, min_length=1, max_length=24)
     number: int | None = Field(default=None, ge=1, le=5, strict=True)
     aim: Aim | None = None
+    releasedAt: float | None = Field(default=None, allow_inf_nan=False)
+    path: list[PathPoint] | None = Field(default=None, min_length=2, max_length=32)
 
 
 @app.middleware("http")
@@ -89,27 +98,50 @@ async def play(request: Request):
             )
         cmd["name"] = body.name.strip()
     else:
-        if body.number is None or body.aim is None:
+        if body.number is None:
             return JSONResponse({"error": "Invalid penalty."}, 400)
         try:
             match = await read_match(cmd["matchId"], cmd["owner"])
         except LookupError:
             return JSONResponse({"error": "Match not found."}, 404)
-        aim = body.aim.model_dump()
-        shot = next(
+        existing = next(
             (s for s in match["state"]["shots"] if s["number"] == body.number), None
         )
-        if (
-            not shot
-            and (
-                not match["state"].get("started")
-                or match["state"]["finished"]
-                or body.number
-                != sum(bool(s.get("outcome")) for s in match["state"]["shots"]) + 1
-            )
-        ) or (shot and shot.get("aim") and shot["aim"] != aim):
+        if not existing and (
+            not match["state"].get("started")
+            or match["state"]["finished"]
+            or body.number
+            != sum(bool(s.get("outcome")) for s in match["state"]["shots"]) + 1
+        ):
             return JSONResponse({"error": "That penalty is not available."}, 409)
-        cmd.update(number=body.number, aim=aim)
+        cmd["number"] = body.number
+        if body.action == "arm":
+            if existing and existing.get("outcome"):
+                return JSONResponse({"error": "Penalty already finished."}, 409)
+            cmd["inputId"] = str(
+                (await prepare_input(cmd["matchId"], body.number))["id"]
+            )
+        else:
+            if body.aim is None:
+                return JSONResponse({"error": "Invalid shot path."}, 400)
+            aim = body.aim.model_dump()
+            path = (
+                [p.model_dump() for p in body.path]
+                if body.path
+                else [dict(x=0, y=0.06), aim]
+            )
+            if path[-1] != aim:
+                return JSONResponse({"error": "Invalid shot path."}, 400)
+            try:
+                await release_input(
+                    cmd["matchId"],
+                    body.number,
+                    dict(aim=aim, path=path),
+                    body.releasedAt,
+                )
+                return JSONResponse(dict(released=True), 202)
+            except ValueError as e:
+                return JSONResponse(dict(error=str(e)), 409)
     try:
         run = await render.workflows.start_task(
             f"{WORKFLOW}/{'start_game' if body.action == 'start' else 'take_penalty'}",
@@ -125,9 +157,13 @@ async def play(request: Request):
 @app.get("/api/matches/{match_id}")
 async def game(match_id: UUID, request: Request):
     try:
-        return public_game(
-            await read_match(str(match_id), request.state.owner),
-            await totals(request.state.owner),
+        match = await read_match(str(match_id), request.state.owner)
+        slot = await read_input(str(match_id))
+        return dict(
+            **public_game(match, await totals(request.state.owner)),
+            turn=public_turn(slot),
+            activeShot=slot["reaction"] if slot else None,
+            serverNow=time.time() * 1000,
         )
     except LookupError:
         return JSONResponse({"error": "Match not found."}, 404)

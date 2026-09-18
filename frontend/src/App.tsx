@@ -15,21 +15,22 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { api, language, sessionKey, type Play, type Session } from "./api";
+import { language, serverTime } from "./api";
+import useGame from "./useGame";
+import {
+  directPath,
+  groundAim,
+  missLabel,
+  endMs,
+  type Playback,
+} from "./playback";
 import { ProjectLinks, PoweredByRender } from "./ProjectLinks";
 import Panel from "./Panel";
 import WorkflowProgress from "./WorkflowProgress";
 import Trace from "./Trace";
 import { renderLink } from "../../shared/links";
-import type { Aim, Game, Shot, Trace as TraceData } from "../../shared/types";
+import type { Aim } from "../../shared/types";
 const GameScene = lazy(() => import("./GameScene"));
-const readSession = (): Session | null => {
-  try {
-    return JSON.parse(localStorage.getItem(sessionKey) || "null");
-  } catch {
-    return null;
-  }
-};
 class SceneBoundary extends Component<
   { children: ReactNode },
   { failed: boolean }
@@ -49,71 +50,66 @@ class SceneBoundary extends Component<
   }
 }
 export default function App() {
-  const [session, setSession] = useState<Session | null>(readSession),
-    [game, setGame] = useState<Game | null>(null),
-    [trace, setTrace] = useState<TraceData | null>(null);
-  const [history, setHistory] = useState<TraceData[]>([]);
-  function addTrace(t: TraceData) {
-    setHistory((prev) => {
-      const i = prev.findIndex((p) => p.id === t.id);
-      return i < 0 ? [...prev, t] : prev.map((p) => (p.id === t.id ? t : p));
-    });
-  }
+  const { session, game, trace, history, error, sending, dispatch } = useGame();
   const [name, setName] = useState(
     localStorage.getItem("beat-jev-name") || "Guest",
   );
-  const [aim, setAim] = useState<Aim>({ x: 0.65, y: 0.65 }),
-    [view, setView] = useState<"aim" | "flight" | "result">("aim"),
-    [shot, setShot] = useState<Shot | null>(null);
-  const [error, setError] = useState(""),
-    [sending, setSending] = useState(false),
+  const [aim, setAim] = useState<Aim>({ x: 0.65, y: 0.65 });
+  const [flight, setFlight] = useState<Playback | null>(null);
+  const [view, setView] = useState<"aim" | "flight" | "result">("aim");
+  const [landed, setLanded] = useState(false),
     [about, setAbout] = useState(false);
   const [reducedMotion, setReduced] = useState(
     matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
-  const seen = useRef(0),
-    requestSequence = useRef(0);
+  const seen = useRef(0);
   useEffect(() => {
     const m = matchMedia("(prefers-reduced-motion: reduce)");
-    const change = () => setReduced(m.matches);
-    m.addEventListener("change", change);
-    return () => m.removeEventListener("change", change);
+    const update = () => setReduced(m.matches);
+    m.addEventListener("change", update);
+    return () => m.removeEventListener("change", update);
   }, []);
-  function remember(s: Session) {
-    setSession(s);
-    localStorage.setItem(sessionKey, JSON.stringify(s));
-  }
-  async function dispatch(command: Play) {
-    if (sending) return;
-    const seq = ++requestSequence.current;
-    setSending(true);
-    setError("");
-    setTrace(null);
-    const runIds =
-      session?.matchId === command.matchId ? session.runIds || [] : [];
-    remember({ matchId: command.matchId, command, runIds });
-    try {
-      const result = await api<{ runId: string }>("/play", command);
-      if (seq !== requestSequence.current) return;
-      remember({
-        matchId: command.matchId,
-        command,
-        runId: result.runId,
-        runIds: [...runIds, result.runId],
+  useEffect(() => {
+    const latest = game?.activeShot || game?.shots.at(-1);
+    if (!latest) return;
+    if (flight && latest.number === flight.number && !flight.reaction) {
+      // The ball clock never resets when the keeper's answer arrives.
+      setFlight((p) =>
+        p ? { ...p, reaction: latest, keeperStartedAt: performance.now() } : p,
+      );
+    } else if (!flight && latest.number > seen.current) {
+      seen.current = latest.number;
+      setFlight({
+        number: latest.number,
+        aim: latest.aim!,
+        path: latest.path || directPath(latest.aim!),
+        startedAt: performance.now() - endMs,
+        reaction: latest,
+        keeperStartedAt: performance.now() - 500,
       });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
+      setLanded(true);
+      setView("result");
     }
-  }
+  }, [game, flight]);
+  useEffect(() => {
+    if (!flight || view !== "flight") return;
+    const timer = setTimeout(
+      () => setLanded(true),
+      Math.max(0, endMs - (performance.now() - flight.startedAt)),
+    );
+    return () => clearTimeout(timer);
+  }, [flight?.startedAt, view]);
+  useEffect(() => {
+    if (landed && flight?.reaction) setView("result");
+  }, [landed, flight?.reaction]);
+  const shot = flight?.reaction;
+  const ready =
+    !!game?.ready && !!game.turn?.ready && view === "aim" && !sending && !error;
   function start() {
     seen.current = 0;
-    setHistory([]);
-    setGame(null);
-    setShot(null);
+    setFlight(null);
+    setLanded(false);
     setView("aim");
-    setTrace(null);
     localStorage.setItem("beat-jev-name", name.trim() || "Guest");
     void dispatch({
       action: "start",
@@ -121,126 +117,52 @@ export default function App() {
       name: name.trim() || "Guest",
     });
   }
-  useEffect(() => {
-    let active = true;
-    const previous = (session?.runIds || []).filter(
-      (id) => id !== session?.runId && !history.some((t) => t.id === id),
-    );
-    void Promise.all(
-      previous.map((id) => api<TraceData>(`/runs/${id}`).catch(() => null)),
-    ).then((items) => {
-      if (active) for (const t of items) if (t) addTrace(t);
-    });
-    return () => {
-      active = false;
-    };
-  }, [session?.runIds?.join(",")]);
-  useEffect(() => {
-    if (!session?.runId) return;
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    let count = 0;
-    const refresh = async () => {
-      if (!active) return;
-      try {
-        const [g, t] = await Promise.all([
-          api<Game>(`/matches/${session.matchId}`).catch(() => null),
-          api<TraceData>(`/runs/${session.runId}`).catch(() => null),
-        ]);
-        if (!active) return;
-        if (g) {
-          setGame(g);
-          const latest = g.shots.at(-1);
-          if (latest && latest.number > seen.current) {
-            seen.current = latest.number;
-            setShot(latest);
-            setView("flight");
-          }
-        }
-        if (t) {
-          setTrace(t);
-          addTrace(t);
-          if (["failed", "canceled"].includes(t.status)) {
-            setError(
-              "The task stopped. Retry to continue from the saved state.",
-            );
-            return;
-          }
-          if (t.status === "completed" && g) {
-            setError("");
-            return;
-          }
-        }
-        if (++count > 160) {
-          setError(
-            "This is taking longer than expected. Retry to check the saved state.",
-          );
-          return;
-        }
-      } catch {
-        /* Try reading the same match again. No new shot is submitted. */
-      }
-      timer = setTimeout(refresh, 700);
-    };
-    void refresh();
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [session?.runId, session?.matchId]);
-  useEffect(() => {
-    if (session && !session.runId && !sending)
-      setError("Your last action was interrupted. Retry to continue.");
-  }, []);
-  useEffect(() => {
-    if (!shot || view !== "flight") return;
-    // Also finishes a shot when WebGL is unavailable or rendering is suspended.
-    const timer = setTimeout(() => setView("result"), reducedMotion ? 0 : 1250);
-    return () => clearTimeout(timer);
-  }, [shot, view, reducedMotion]);
-  const ready =
-    !!game?.ready &&
-    trace?.status === "completed" &&
-    view === "aim" &&
-    !sending &&
-    !error;
-  function shoot(target: Aim) {
+  function shoot(target: Aim, path?: Aim[]) {
     if (!ready || !game) return;
-    setAim(target);
+    const a = groundAim(target),
+      trajectory = path || directPath(a),
+      number = game.attempts + 1;
+    seen.current = number;
+    setAim(a);
+    setLanded(false);
     setView("flight");
-    setShot(null);
+    setFlight({
+      number,
+      aim: a,
+      path: trajectory,
+      startedAt: performance.now(),
+    });
     void dispatch({
       action: "shoot",
       matchId: game.id,
-      number: game.attempts + 1,
-      aim: target,
+      number,
+      aim: a,
+      path: trajectory,
+      releasedAt: serverTime(),
     });
   }
   function next() {
-    setShot(null);
+    setFlight(null);
+    setLanded(false);
     setView("aim");
   }
-  const completed = view === "result" && game?.attempts === 5;
-  const visibleShots =
-    game?.shots.filter((s) => view !== "flight" || s.number !== shot?.number) ||
-    [];
+  const completed = view === "result" && shot?.number === 5;
+  const visibleShots = (game?.shots || []).filter(
+    (s) => !(view === "flight" && s.number === flight?.number),
+  );
+  if (
+    view === "result" &&
+    shot &&
+    !visibleShots.some((s) => s.number === shot.number)
+  )
+    visibleShots.push(shot);
   const goals = visibleShots.filter((s) => s.outcome === "goal").length;
-  const busy = !!session && !ready && view !== "result";
-  const message = error
-    ? "Connection interrupted"
-    : view === "result"
-      ? shot?.outcome === "goal"
-        ? "GOAL!"
-        : shot?.outcome === "saved"
-          ? "SAVED"
-          : "WIDE"
-      : !session
-        ? "You vs. Jev"
-        : ready
-          ? "Pick your spot."
-          : sending || session?.command.action === "shoot"
-            ? "Playing your penalty…"
-            : "Jev is getting ready…";
+  const message =
+    shot?.outcome === "goal"
+      ? "GOAL!"
+      : shot?.outcome === "saved"
+        ? "SAVED"
+        : missLabel(shot?.aim);
   return (
     <div className="app">
       <header>
@@ -300,7 +222,7 @@ export default function App() {
                     ArrowLeft: { ...aim, x: Math.max(-1.6, aim.x - delta) },
                     ArrowRight: { ...aim, x: Math.min(1.6, aim.x + delta) },
                     ArrowUp: { ...aim, y: Math.min(1.5, aim.y + delta) },
-                    ArrowDown: { ...aim, y: Math.max(-0.4, aim.y - delta) },
+                    ArrowDown: { ...aim, y: Math.max(0.06, aim.y - delta) },
                   };
                   if (targets[e.key]) {
                     e.preventDefault();
@@ -326,8 +248,8 @@ export default function App() {
                       onAim={setAim}
                       onShoot={shoot}
                       ready={ready}
-                      shot={shot}
-                      onComplete={() => setView("result")}
+                      flight={flight}
+                      onComplete={() => setLanded(true)}
                       reducedMotion={reducedMotion}
                     />
                   </Suspense>
@@ -368,16 +290,9 @@ export default function App() {
                     {message}
                   </div>
                 )}
-                {session && view === "flight" && !shot && (
-                  <div className="pending-pill">
-                    <LoaderCircle className="spin" size={15} />
-                    Jev is reading your shot
-                  </div>
-                )}
                 {ready && (
                   <div className="aim-hint">
-                    Tap a spot to shoot <span>·</span> Arrows + Space on
-                    keyboard
+                    Tap a spot or draw a path <span>·</span> Release to shoot
                   </div>
                 )}
               </div>
@@ -417,15 +332,23 @@ export default function App() {
                       ? `${goals} ${goals === 1 ? "goal" : "goals"} from 5 shots.`
                       : view === "result"
                         ? shot?.outcome === "goal"
-                          ? "Past the keeper."
+                          ? shot?.reaction === "late"
+                            ? "Jev was too late."
+                            : shot?.reaction === "unavailable"
+                              ? "Jev could not respond."
+                              : "Past the keeper."
                           : shot?.outcome === "saved"
                             ? "Jev read that one."
-                            : "Outside the goal."
+                            : shot?.aim && shot.aim.y > 0.965
+                              ? "Over the crossbar."
+                              : "Outside the posts."
                         : ready
                           ? `Penalty ${(game?.attempts || 0) + 1} of 5`
-                          : busy
-                            ? "Workflow running…"
-                            : ""}
+                          : view === "flight"
+                            ? landed
+                              ? "Checking the result…"
+                              : "Ball in play"
+                            : "Preparing the next shot…"}
                 </div>
                 {error ? (
                   <button
@@ -447,10 +370,10 @@ export default function App() {
                 ) : view === "result" ? (
                   <button
                     className="primary"
-                    disabled={!game?.ready || trace?.status !== "completed"}
+                    disabled={!game?.ready || !game?.turn?.ready}
                     onClick={next}
                   >
-                    {game?.ready ? "Next shot" : "Preparing…"}
+                    {game?.turn?.ready ? "Next shot" : "Preparing…"}
                     <ArrowRight size={16} />
                   </button>
                 ) : session ? (
@@ -464,7 +387,11 @@ export default function App() {
                     ) : (
                       <>
                         <LoaderCircle size={16} className="spin" />
-                        Preparing
+                        {view === "flight"
+                          ? landed
+                            ? "Finishing"
+                            : "In flight"
+                          : "Preparing"}
                       </>
                     )}
                   </button>
@@ -512,15 +439,11 @@ export default function App() {
           </div>
           <Trace
             trace={trace}
-            history={history
-              .slice()
-              .sort(
-                (a, b) =>
-                  (session?.runIds || []).indexOf(a.id) -
-                  (session?.runIds || []).indexOf(b.id),
-              )}
+            history={history}
+            turn={game?.turn}
+            released={session?.command.action === "shoot"}
             waiting={sending || (!!session && !trace)}
-            shot={view === "result" ? shot || undefined : undefined}
+            shot={shot}
           />
         </div>
       </main>
@@ -541,8 +464,8 @@ export default function App() {
         <Panel title="How it works" close={() => setAbout(false)}>
           <h2>You shoot. Jev reacts.</h2>
           <p>
-            Jev receives the ball’s projected crossing and chooses where to
-            defend. Aim near a corner to beat its reach.
+            Tap a spot or draw a path. Releasing starts the kick. Jev has 850 ms
+            from release to choose a move. Late decisions cannot save.
           </p>
           <ol>
             <li>
@@ -560,14 +483,13 @@ export default function App() {
           </ol>
           <p>
             Code calculates the trajectory and checks saves. The browser plays
-            the saved result after the workflow responds; it does not run the
-            animation frames on Render.
+            your shot on release and applies Jev’s returned move; it does not
+            run the animation frames on Render.
           </p>
           <p className="muted">
             A nickname is enough. Your record belongs to this browser. Current
-            shot coordinates go to TypeSafe; your nickname is not sent. Open the
-            workflow strip to inspect the real task runs and Jev’s latest
-            decision.
+            shot coordinates go to TypeSafe; your nickname is not sent. The side
+            panel shows real task runs and Jev’s latest decision.
           </p>
         </Panel>
       )}

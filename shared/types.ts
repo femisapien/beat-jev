@@ -9,6 +9,9 @@ export type Decision = {
 };
 export type Shot = {
   number: number;
+  path?: Aim[];
+  reaction?: "ready" | "late" | "unavailable";
+  reactionMs?: number;
   decision?: Decision;
   aim?: Aim;
   outcome?: "goal" | "saved" | "wide";
@@ -34,6 +37,8 @@ export type Game = {
   goals: number;
   totalAttempts: number;
   totalGoals: number;
+  turn?: Turn;
+  activeShot?: Shot;
 };
 export type Command = {
   matchId: string;
@@ -41,6 +46,15 @@ export type Command = {
   name?: string;
   number?: number;
   aim?: Aim;
+  path?: Aim[];
+  inputId?: string;
+};
+export type Turn = {
+  id: string;
+  number: number;
+  ready: boolean;
+  expired: boolean;
+  submitted: boolean;
 };
 export type Span = {
   id: string;

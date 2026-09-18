@@ -1,20 +1,18 @@
-import {
-  Canvas,
-  useFrame,
-  useThree,
-  type ThreeEvent,
-} from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import Footballer from "./Footballer";
-import type { Aim, Shot } from "../../shared/types";
+import ShotInput from "./ShotInput";
+import { impactMs, endMs, type Playback } from "./playback";
+import config from "../../shared/game.json";
+import type { Aim } from "../../shared/types";
 
 type Props = {
   aim: Aim;
   onAim: (aim: Aim) => void;
-  onShoot: (aim: Aim) => void;
+  onShoot: (aim: Aim, path?: Aim[]) => void;
   ready: boolean;
-  shot: Shot | null;
+  flight: Playback | null;
   onComplete: () => void;
   reducedMotion: boolean;
 };
@@ -140,46 +138,64 @@ function Pitch() {
   );
 }
 function Ball({
-  shot,
+  flight,
   onComplete,
   reducedMotion,
 }: {
-  shot: Shot | null;
+  flight: Playback | null;
   onComplete: () => void;
   reducedMotion: boolean;
 }) {
   const ref = useRef<THREE.Group>(null),
-    start = useRef(0),
     done = useRef(false);
+  const curve = useMemo(
+    () =>
+      flight
+        ? new THREE.CatmullRomCurve3(
+            flight.path.map(
+              (p, i) =>
+                new THREE.Vector3(
+                  p.x * 3.66,
+                  p.y * 2.44,
+                  4.5 - (10.5 * i) / (flight.path.length - 1),
+                ),
+            ),
+            false,
+            "centripetal",
+          )
+        : null,
+    [flight?.startedAt],
+  );
   useLayoutEffect(() => {
-    start.current = performance.now();
     done.current = false;
-  }, [shot]);
+  }, [flight?.startedAt]);
   useFrame(() => {
     if (!ref.current) return;
-    if (!shot) {
+    if (!flight || !curve) {
       ref.current.position.set(0, 0.14, 4.5);
       ref.current.rotation.set(0, 0, 0);
       return;
     }
-    const elapsed = performance.now() - start.current;
+    const elapsed = performance.now() - flight.startedAt;
     const t = reducedMotion
       ? 1
-      : Math.min(1, Math.max(0, (elapsed - 180) / 650));
-    const a = shot.aim!;
+      : THREE.MathUtils.clamp(
+          (elapsed - config.runupMs) / config.flightMs,
+          0,
+          1,
+        );
+    const position = curve.getPoint(t);
     const bounce =
-      shot.outcome === "saved" && t === 1
-        ? Math.min(1, Math.max(0, (elapsed - 830) / 290))
+      flight.reaction?.outcome === "saved" && t === 1
+        ? THREE.MathUtils.clamp((elapsed - impactMs) / 300, 0, 1)
         : 0;
     ref.current.position.set(
-      a.x * 3.66 * t,
-      (0.14 + (a.y * 2.44 - 0.14) * t + Math.sin(t * Math.PI) * 0.65) *
-        (1 - bounce * 0.75),
-      4.5 - 10.4 * t + bounce * 1.3,
+      position.x,
+      Math.max(0.14, position.y) * (1 - bounce * 0.6),
+      position.z + bounce * 1.3,
     );
-    ref.current.rotation.x = -t * 12;
-    ref.current.rotation.z = t * 5;
-    if ((elapsed >= 1120 || reducedMotion) && !done.current) {
+    ref.current.rotation.set(-t * 12, 0, t * 5);
+    if ((elapsed >= endMs || reducedMotion) && !done.current) {
       done.current = true;
       onComplete();
     }
@@ -228,14 +244,6 @@ function Scene(props: Props) {
     );
     cam.updateProjectionMatrix();
   }, [camera, size]);
-  const aim = (e: ThreeEvent<PointerEvent>) => ({
-    x:
-      Math.round(THREE.MathUtils.clamp(e.point.x / 3.66, -1.6, 1.6) * 1000) /
-      1000,
-    y:
-      Math.round(THREE.MathUtils.clamp(e.point.y / 2.44, -0.4, 1.5) * 1000) /
-      1000,
-  });
   return (
     <>
       <color attach="background" args={["#172c28"]} />
@@ -255,50 +263,23 @@ function Scene(props: Props) {
       />
       <directionalLight position={[6, 6, -9]} color="#c1b2fd" intensity={1.4} />
       <Pitch />
-      <Footballer shot={props.shot} reducedMotion={props.reducedMotion} />
+      <Footballer flight={props.flight} reducedMotion={props.reducedMotion} />
       <Footballer
         keeper
-        shot={props.shot}
+        flight={props.flight}
         reducedMotion={props.reducedMotion}
       />
       <Ball
-        shot={props.shot}
+        flight={props.flight}
         reducedMotion={props.reducedMotion}
         onComplete={props.onComplete}
       />
-      {props.ready && (
-        <group position={[props.aim.x * 3.66, props.aim.y * 2.44, -5.86]}>
-          <mesh>
-            <ringGeometry args={[0.12, 0.14, 32]} />
-            <meshBasicMaterial color="#ddff9a" side={THREE.DoubleSide} />
-          </mesh>
-          <mesh>
-            <circleGeometry args={[0.025, 16]} />
-            <meshBasicMaterial color="#ddff9a" />
-          </mesh>
-        </group>
-      )}
-      <mesh
-        position={[0, 1.2, -5.8]}
-        onPointerMove={(e) => {
-          if (props.ready) props.onAim(aim(e));
-        }}
-        onPointerDown={(e) => {
-          if (props.ready) {
-            e.stopPropagation();
-            props.onAim(aim(e));
-          }
-        }}
-        onPointerUp={(e) => {
-          if (props.ready) {
-            e.stopPropagation();
-            props.onShoot(aim(e));
-          }
-        }}
-      >
-        <planeGeometry args={[13, 7]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
+      <ShotInput
+        ready={props.ready}
+        aim={props.aim}
+        onAim={props.onAim}
+        onShoot={props.onShoot}
+      />
     </>
   );
 }

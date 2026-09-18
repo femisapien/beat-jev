@@ -1146,3 +1146,20 @@ footer a {
     margin: 8px 0;
   }
 }
+
+.reaction-window {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+.reaction-window strong {
+  color: var(--purple);
+  font-weight: 550;
+}
+.stage canvas {
+  touch-action: none;
+}

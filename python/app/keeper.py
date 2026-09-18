@@ -3,10 +3,11 @@ from typesafe_sdk import AsyncTypeSafeClient, Choice, RetryPolicy
 from app.game import CONFIG
 
 
-async def decide_keeper(aim):
+async def decide_keeper(aim, path=None, timeout=10):
     state = dict(
         ball=dict(
             projectedCrossing=aim,
+            trajectory=path or [],
             horizontal="left"
             if aim["x"] < -0.31
             else "right"
@@ -21,7 +22,7 @@ async def decide_keeper(aim):
     )
     started = perf_counter()
     async with AsyncTypeSafeClient(
-        retry=RetryPolicy(max_retries=0, timeout=10)
+        retry=RetryPolicy(max_retries=0, timeout=timeout)
     ) as client:
         result = await client.system_one(
             state=state,

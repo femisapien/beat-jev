@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { migrate, readMatch, totals } from "./store";
 import { publicGame } from "./game";
 import { readTrace, render, workflow } from "./runs";
+import { prepareInput, releaseInput, readInput, publicTurn } from "./inputs";
 const app = express();
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "4kb" }));
@@ -45,9 +46,18 @@ app.post("/api/play", async (req, res) => {
     if (
       !b ||
       !uuid.test(b.matchId) ||
-      !["start", "shoot"].includes(b.action) ||
+      !["start", "arm", "shoot"].includes(b.action) ||
       Object.keys(b).some(
-        (k) => !["action", "matchId", "name", "number", "aim"].includes(k),
+        (k) =>
+          ![
+            "action",
+            "matchId",
+            "name",
+            "number",
+            "aim",
+            "path",
+            "releasedAt",
+          ].includes(k),
       )
     )
       return res.status(400).json({ error: "Invalid game action." });
@@ -63,35 +73,55 @@ app.post("/api/play", async (req, res) => {
           .json({ error: "Use a name between 1 and 24 characters." });
       cmd.name = b.name.trim();
     } else {
-      if (
-        !Number.isInteger(b.number) ||
-        b.number < 1 ||
-        b.number > 5 ||
-        !b.aim ||
-        Object.keys(b.aim).sort().join() !== "x,y" ||
-        ![b.aim.x, b.aim.y].every(
-          (v) => typeof v === "number" && Number.isFinite(v),
-        ) ||
-        Math.abs(b.aim.x) > 1.6 ||
-        b.aim.y < -0.4 ||
-        b.aim.y > 1.5
-      )
+      if (!Number.isInteger(b.number) || b.number < 1 || b.number > 5)
         return res.status(400).json({ error: "Invalid penalty." });
       const match = await readMatch(b.matchId, cmd.owner);
-      const shot = match.state.shots.find((s) => s.number === b.number);
+      const existing = match.state.shots.find((s) => s.number === b.number);
       if (
-        (!shot &&
-          (!match.state.started ||
-            match.state.finished ||
-            b.number !==
-              match.state.shots.filter((s) => s.outcome).length + 1)) ||
-        (shot?.aim && (shot.aim.x !== b.aim.x || shot.aim.y !== b.aim.y))
+        !existing &&
+        (!match.state.started ||
+          match.state.finished ||
+          b.number !== match.state.shots.filter((s) => s.outcome).length + 1)
       )
         return res
           .status(409)
           .json({ error: "That penalty is not available." });
       cmd.number = b.number;
-      cmd.aim = b.aim;
+      if (b.action === "arm") {
+        if (existing?.outcome)
+          return res.status(409).json({ error: "Penalty already finished." });
+        cmd.inputId = (await prepareInput(b.matchId, b.number)).id;
+      } else {
+        const point = (p: any, x: number, y: number) =>
+          p &&
+          Object.keys(p).sort().join() === "x,y" &&
+          [p.x, p.y].every(Number.isFinite) &&
+          Math.abs(p.x) <= x &&
+          p.y >= 0.035 &&
+          p.y <= y;
+        const path = b.path || [{ x: 0, y: 0.06 }, b.aim];
+        if (
+          !point(b.aim, 1.6, 1.5) ||
+          !Array.isArray(path) ||
+          path.length < 2 ||
+          path.length > 32 ||
+          !path.every((p) => point(p, 4, 5)) ||
+          path.at(-1).x !== b.aim.x ||
+          path.at(-1).y !== b.aim.y
+        )
+          return res.status(400).json({ error: "Invalid shot path." });
+        try {
+          await releaseInput(
+            b.matchId,
+            b.number,
+            { aim: b.aim, path },
+            Number.isFinite(b.releasedAt) ? b.releasedAt : Date.now(),
+          );
+          return res.status(202).json({ released: true });
+        } catch (e) {
+          return res.status(409).json({ error: (e as Error).message });
+        }
+      }
     }
     const run = await render.workflows.startTask(
       `${workflow}/${b.action === "start" ? "start_game" : "take_penalty"}`,
@@ -109,7 +139,16 @@ app.get("/api/matches/:id", async (req, res) => {
     return res.status(404).json({ error: "Match not found." });
   try {
     const match = await readMatch(req.params.id, res.locals.owner);
-    res.json(publicGame(match, await totals(res.locals.owner)));
+    const [counts, slot] = await Promise.all([
+      totals(res.locals.owner),
+      readInput(req.params.id),
+    ]);
+    res.json({
+      ...publicGame(match, counts),
+      turn: publicTurn(slot),
+      activeShot: slot?.reaction || undefined,
+      serverNow: Date.now(),
+    });
   } catch {
     res.status(404).json({ error: "Match not found." });
   }

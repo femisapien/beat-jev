@@ -112,7 +112,7 @@ for (const [label, width, height] of [
     .waitFor({ timeout: 20000 });
   assert.equal(await page.locator(".execution-run").count(), 6);
   assert.equal(
-    await page.getByText("Goalkeeper reacts", { exact: true }).count(),
+    await page.getByText("Jev decision", { exact: true }).count(),
     5,
   );
   assert.ok(

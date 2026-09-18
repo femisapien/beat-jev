@@ -1,0 +1,103 @@
+import asyncio
+import time
+from uuid import uuid4
+from datetime import datetime, timezone
+from psycopg.types.json import Jsonb
+from app.store import connection
+from app.game import CONFIG
+
+
+async def prepare_input(match_id, number):
+    async with await connection() as conn:
+        return await (
+            await conn.execute(
+                """INSERT INTO penalty_inputs(match_id,number,id,expires_at)
+            VALUES(%s,%s,%s,now()+%s*interval '1 second') ON CONFLICT(match_id,number) DO UPDATE
+            SET id=CASE WHEN penalty_inputs.input IS NULL THEN EXCLUDED.id ELSE penalty_inputs.id END,
+              expires_at=EXCLUDED.expires_at, player_ready=false, keeper_ready=false RETURNING *""",
+                (match_id, number, str(uuid4()), CONFIG["readySeconds"]),
+            )
+        ).fetchone()
+
+
+async def read_input(match_id, number=None, conn=None):
+    if conn is None:
+        async with await connection() as db:
+            return await read_input(match_id, number, db)
+    return await (
+        await conn.execute(
+            "SELECT * FROM penalty_inputs WHERE match_id=%s AND (%s::int IS NULL OR number=%s) ORDER BY number DESC LIMIT 1",
+            (match_id, number, number),
+        )
+    ).fetchone()
+
+
+async def release_input(match_id, number, data, released_at=None):
+    async with await connection() as conn:
+        row = await (
+            await conn.execute(
+                """UPDATE penalty_inputs SET input=COALESCE(input,%s), released_at=COALESCE(released_at,to_timestamp(%s::double precision/1000))
+          WHERE match_id=%s AND number=%s AND (input IS NOT NULL OR (player_ready AND keeper_ready AND expires_at>now())) RETURNING *""",
+                (
+                    Jsonb(data),
+                    max(
+                        time.time() * 1000 - 5000,
+                        min(time.time() * 1000, released_at or time.time() * 1000),
+                    ),
+                    match_id,
+                    number,
+                ),
+            )
+        ).fetchone()
+        if not row:
+            raise ValueError("The keeper is not ready. Prepare the penalty again.")
+        if row["input"] != data:
+            raise ValueError("This penalty is already committed.")
+        return row
+
+
+async def wait_for_input(cmd, actor):
+    async with await connection() as conn:
+        await conn.set_autocommit(True)
+        await conn.execute(
+            f"UPDATE penalty_inputs SET {actor}_ready=true WHERE id=%s",
+            (cmd["inputId"],),
+        )
+        end = asyncio.get_running_loop().time() + CONFIG["readySeconds"] + 5
+        while asyncio.get_running_loop().time() < end:
+            row = await read_input(cmd["matchId"], cmd["number"], conn)
+            if not row or str(row["id"]) != cmd["inputId"]:
+                return None
+            if row["input"]:
+                return row
+            if datetime.now(timezone.utc) > row["expires_at"]:
+                return None
+            await asyncio.sleep(0.05)
+    return None
+
+
+async def save_reaction(input_id, shot):
+    async with await connection() as conn:
+        row = await (
+            await conn.execute(
+                "UPDATE penalty_inputs SET reaction=COALESCE(reaction,%s) WHERE id=%s RETURNING reaction",
+                (Jsonb(shot), input_id),
+            )
+        ).fetchone()
+        return row["reaction"]
+
+
+def public_turn(row):
+    if not row:
+        return None
+    expired = datetime.now(timezone.utc) > row["expires_at"]
+    return dict(
+        id=str(row["id"]),
+        number=row["number"],
+        ready=row["player_ready"]
+        and row["keeper_ready"]
+        and not expired
+        and not row["input"],
+        expired=expired,
+        submitted=bool(row["input"]),
+    )

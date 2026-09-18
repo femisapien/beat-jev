@@ -55,6 +55,14 @@ class GameTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             submit(s, 2, dict(x=0, y=0.3))
 
+    def test_late_correct_decision_cannot_save(self):
+        s = state()
+        aim = dict(x=-0.62, y=0.25)
+        shot = submit(s, 1, aim)
+        shot.update(decision=D, reaction="late")
+        shot.update(keeper_move(aim, "leave_wide"))
+        self.assertEqual(record(s, 1, aim)["outcome"], "goal")
+
     def test_pending_is_hidden(self):
         m = dict(id="test", name="Guest", owner_hash="hidden", state=state())
         self.assertTrue(public_game(m, dict(attempts=0, goals=0))["ready"])

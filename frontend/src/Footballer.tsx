@@ -1,18 +1,18 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFrame, useLoader } from "@react-three/fiber";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import * as THREE from "three";
-import type { Shot } from "../../shared/types";
+import type { Playback } from "./playback";
 
 // One CC0 human rig, shared by both actors. Each actor owns its skeleton and kit.
 export default function Footballer({
   keeper = false,
-  shot,
+  flight,
   reducedMotion,
 }: {
   keeper?: boolean;
-  shot: Shot | null;
+  flight: Playback | null;
   reducedMotion: boolean;
 }) {
   const asset = useLoader(GLTFLoader, "/models/footballer.glb");
@@ -96,11 +96,7 @@ export default function Footballer({
     });
     return { object, rest };
   }, [asset, keeper]);
-  const actor = useRef<THREE.Group>(null),
-    started = useRef(0);
-  useLayoutEffect(() => {
-    started.current = performance.now();
-  }, [shot]);
+  const actor = useRef<THREE.Group>(null);
   const temp = useMemo(
     () => ({
       q: new THREE.Quaternion(),
@@ -126,38 +122,46 @@ export default function Footballer({
   }
   useFrame(({ clock }) => {
     if (!actor.current) return;
-    const t = shot
+    const shot = flight?.reaction;
+    const t = flight
       ? reducedMotion
         ? 1
         : THREE.MathUtils.clamp(
-            (performance.now() - started.current) / 1100,
+            (performance.now() - flight.startedAt) / 1100,
             0,
             1,
           )
       : 0;
-    const moves =
-      keeper &&
-      shot &&
-      shot.outcome !== "wide" &&
-      shot.decision?.choice !== "leave_wide";
-    const dive = moves ? THREE.MathUtils.smoothstep(t, 0.13, 0.78) : 0;
+    const moves = keeper && shot && shot.keeperAction === "dive";
+    const dive = moves
+      ? reducedMotion
+        ? 1
+        : THREE.MathUtils.smoothstep(
+            (performance.now() -
+              (flight?.keeperStartedAt || performance.now())) /
+              450,
+            0,
+            1,
+          )
+      : 0;
+    const low = !!moves && (shot?.aim?.y || 0) < 0.4;
     const direction = Math.sign(shot?.keeper?.x || 0);
-    const kick = shot ? Math.sin(Math.min(1, t * 2.6) * Math.PI) : 0;
+    const kick = flight ? Math.sin(Math.min(1, t * 2.6) * Math.PI) : 0;
     actor.current.position.set(keeper ? 0 : -0.32, 0, keeper ? -5.78 : 5.17);
     actor.current.rotation.set(0, keeper ? 0 : Math.PI, 0);
     for (const [bone, q] of rig.rest) bone.quaternion.copy(q);
     rig.object.updateMatrixWorld(true);
     rotate(
       "upperarm_l",
-      keeper ? -0.18 : 0,
+      keeper ? -0.18 - (low ? dive * 0.6 : 0) : 0,
       0,
-      keeper ? -0.98 + dive * 2.1 : -1.35,
+      keeper ? -0.98 + dive * (low ? 0.2 : 2.1) : -1.35,
     );
     rotate(
       "upperarm_r",
-      keeper ? -0.18 : 0,
+      keeper ? -0.18 - (low ? dive * 0.6 : 0) : 0,
       0,
-      keeper ? 0.98 - dive * 2.1 : 1.35,
+      keeper ? 0.98 - dive * (low ? 0.2 : 2.1) : 1.35,
     );
     rotate("lowerarm_l", 0, keeper ? -0.55 : 0, keeper ? -0.15 : 0);
     rotate("lowerarm_r", 0, keeper ? 0.55 : 0, keeper ? 0.15 : 0);
@@ -168,7 +172,11 @@ export default function Footballer({
     rotate("spine_01", keeper ? 0.08 : -kick * 0.12);
     if (keeper) {
       actor.current.position.y = -0.04;
-      actor.current.rotation.z = -direction * dive * 1.02;
+      actor.current.rotation.z =
+        -direction * dive * (shot?.aim && shot.aim.y < 0.4 ? 1.45 : 1.02);
+      if (!direction)
+        actor.current.rotation.x =
+          (shot?.aim && shot.aim.y < 0.4 ? 0.85 : 0) * dive;
       actor.current.updateMatrixWorld(true);
       if (dive > 0 && shot?.keeper) {
         const target = shot.outcome === "saved" ? shot.aim! : shot.keeper;
@@ -178,12 +186,15 @@ export default function Footballer({
         right.getWorldPosition(temp.r);
         temp.p.copy(temp.l).add(temp.r).multiplyScalar(0.5);
         actor.current.position.x += (target.x * 3.66 - temp.p.x) * dive;
-        actor.current.position.y += (target.y * 2.44 - temp.p.y) * dive;
+        actor.current.position.y = Math.max(
+          -0.04,
+          actor.current.position.y + (target.y * 2.44 - temp.p.y) * dive,
+        );
       }
     } else {
       actor.current.position.z -= Math.sin(Math.min(1, t * 2) * Math.PI) * 0.27;
     }
-    if (!shot && !reducedMotion)
+    if (!flight && !reducedMotion)
       actor.current.position.y += Math.sin(clock.elapsedTime * 2) * 0.008;
   });
   return (

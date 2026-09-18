@@ -25,7 +25,7 @@ export default function WorkflowProgress({
       label: `Penalty ${i + 1}`,
       done: (game?.attempts || 0) > i,
       active:
-        !isStarting &&
+        session?.command.action === "shoot" &&
         !!session &&
         session.command.number === i + 1 &&
         (game?.attempts || 0) <= i,

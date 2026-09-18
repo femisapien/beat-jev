@@ -1,10 +1,15 @@
 import { TypeSafeClient, choice } from "@typesafe-ai/sdk";
 import config from "../../shared/game.json";
 import type { Aim, Decision } from "../../shared/types";
-export async function decideKeeper(aim: Aim): Promise<Decision> {
+export async function decideKeeper(
+  aim: Aim,
+  path: Aim[] = [],
+  timeout = 10000,
+): Promise<Decision> {
   const state = {
     ball: {
       projectedCrossing: aim,
+      trajectory: path,
       horizontal: aim.x < -0.31 ? "left" : aim.x > 0.31 ? "right" : "center",
       height: aim.y < 0.505 ? "low" : "high",
       path:
@@ -17,7 +22,7 @@ export async function decideKeeper(aim: Aim): Promise<Decision> {
   };
   const start = performance.now();
   const result = await new TypeSafeClient({
-    timeout: 10000,
+    timeout,
     retry: { maxRetries: 0 },
   }).systemOne({
     state,

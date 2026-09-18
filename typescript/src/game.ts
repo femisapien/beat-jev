@@ -29,7 +29,8 @@ export function resolveShot(
 }
 export function record(state: State, number: number, aim: Aim) {
   const shot = state.shots.find((s) => s.number === number);
-  if (!shot?.decision || !shot.keeper) throw new Error("Keeper is not ready.");
+  if (!shot || (!shot.decision && !shot.reaction) || !shot.keeper)
+    throw new Error("Keeper is not ready.");
   if (shot.outcome) {
     if (shot.aim?.x !== aim.x || shot.aim?.y !== aim.y)
       throw new Error("This penalty is already committed.");
@@ -43,7 +44,13 @@ export function record(state: State, number: number, aim: Aim) {
     throw new Error("Penalty out of order.");
   Object.assign(shot, {
     aim,
-    ...resolveShot(aim, shot.decision.choice, shot.keeper),
+    ...resolveShot(
+      aim,
+      shot.reaction && shot.reaction !== "ready"
+        ? "leave_wide"
+        : shot.decision!.choice,
+      shot.keeper,
+    ),
     committedAt: new Date().toISOString(),
   });
   return shot;

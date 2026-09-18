@@ -38,7 +38,11 @@ def resolve_shot(aim, choice, keeper=None):
 
 def record(state, number, aim):
     shot = next((s for s in state["shots"] if s["number"] == number), None)
-    if not shot or not shot.get("decision") or not shot.get("keeper"):
+    if (
+        not shot
+        or (not shot.get("decision") and not shot.get("reaction"))
+        or not shot.get("keeper")
+    ):
         raise ValueError("Keeper is not ready.")
     if shot.get("outcome"):
         if shot["aim"] != aim:
@@ -52,7 +56,13 @@ def record(state, number, aim):
         raise ValueError("Penalty out of order.")
     shot.update(
         aim=aim,
-        **resolve_shot(aim, shot["decision"]["choice"], shot["keeper"]),
+        **resolve_shot(
+            aim,
+            "leave_wide"
+            if shot.get("reaction") in ["late", "unavailable"]
+            else shot["decision"]["choice"],
+            shot["keeper"],
+        ),
         committedAt=datetime.now(timezone.utc).isoformat(),
     )
     return shot

@@ -6,3 +6,17 @@ CREATE TABLE IF NOT EXISTS matches (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS matches_owner ON matches(owner_hash, created_at DESC);
+
+-- A durable input slot lets parallel tasks start before the player releases.
+CREATE TABLE IF NOT EXISTS penalty_inputs (
+  match_id uuid NOT NULL REFERENCES matches(id),
+  number integer NOT NULL CHECK (number BETWEEN 1 AND 5),
+  id uuid NOT NULL UNIQUE,
+  expires_at timestamptz NOT NULL,
+  player_ready boolean NOT NULL DEFAULT false,
+  keeper_ready boolean NOT NULL DEFAULT false,
+  input jsonb,
+  released_at timestamptz,
+  reaction jsonb,
+  PRIMARY KEY(match_id, number)
+);

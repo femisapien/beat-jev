@@ -58,7 +58,17 @@ const targets = [
 ];
 for (let number = 1; number <= 5; number++) {
   const body = { action: "shoot", matchId, number, aim: targets[number - 1] };
-  run = await play(body);
+  run = await play({ action: "arm", matchId, number });
+  await waitFor((g) => g.turn?.number === number && g.turn.ready);
+  run.start = Date.now();
+  assert.equal((await request("/play", body)).status, 202);
+  const reacted = await waitFor((g) => g.activeShot?.number === number);
+  console.log(
+    "Reaction available",
+    Date.now() - run.start,
+    "ms",
+    reacted.activeShot.reaction,
+  );
   g = await waitFor((g) => g.attempts === number);
   const shot = g.shots[number - 1];
   console.log(
@@ -69,10 +79,11 @@ for (let number = 1; number <= 5; number++) {
     Date.now() - run.start,
     "ms",
     "Jev",
-    shot.decision.durationMs,
+    shot.decision?.durationMs,
     "ms",
   );
   assert.equal(g.shots.length, number);
+  assert.ok(shot.decision, "Jev should respond in the normal live case");
   assert.deepEqual(
     shot.decision.state.ball.projectedCrossing,
     targets[number - 1],
@@ -127,6 +138,15 @@ assert.ok(
 );
 assert.ok(traces.some((t) => t.spans.some((s) => s.name === "record_result")));
 assert.ok(traces.some((t) => t.spans.some((s) => s.name === "finish_match")));
+for (const trace of traces.filter((t) => t.number)) {
+  const kick = trace.spans.find((s) => s.name === "player_kick"),
+    keeper = trace.spans.find((s) => s.name === "goalkeeper_action");
+  assert.ok(
+    Date.parse(kick.startedAt) < Date.parse(keeper.completedAt) &&
+      Date.parse(keeper.startedAt) < Date.parse(kick.completedAt),
+    "Kick and keeper tasks overlap on Render",
+  );
+}
 await mkdir("work", { recursive: true });
 const lang = (await request("/health")).data.language;
 await writeFile(

@@ -81,3 +81,15 @@ test("public state is ready only when no penalty is pending and hides unfinished
   record(m.state, 1, { x: 0.8, y: 0.8 });
   assert.equal(publicGame(m, { attempts: 1, goals: 1 }).ready, true);
 });
+
+test("a late correct decision cannot save", () => {
+  const s = state(),
+    aim = { x: -0.62, y: 0.25 };
+  const shot = submit(s, 1, aim);
+  Object.assign(
+    shot,
+    { decision, reaction: "late" },
+    keeperMove(aim, "leave_wide"),
+  );
+  assert.equal(record(s, 1, aim).outcome, "goal");
+});
