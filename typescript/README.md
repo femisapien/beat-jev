@@ -19,7 +19,7 @@ The Blueprint creates a paid web service, a usage-billed workflow with all eleve
 
 1. Enter a nickname and press **Play**.
 2. Tap a spot or draw a path. Release to kick. Arrow keys and Space also work.
-3. Swap roles. Press **Ready in goal**, then use Left/Right to move and hold Space to jump. Touch controls work too.
+3. Roles swap automatically. A short countdown announces Jev’s kick. Use Left/Right to move and hold Space to jump, or use the touch controls.
 4. Five kicks each. Most goals wins. Press **Try again** for a new match.
 
 One parent task owns ten alternating turns. Player and keeper subtasks run in parallel; saving the result waits for both. Jev commits his shot before seeing your current movement. The **Render Workflows** panel shows the real task tree; expand Jev’s decision for its input and response.

@@ -20,12 +20,14 @@ flowchart TD
 ## Playing
 
 - **Your kick:** tap a target or draw a path. Release starts the local animation immediately. Jev sees the current path and calculated lane/height, then chooses a typed defensive action.
-- **Jev's kick:** Jev chooses a typed target using only completed goalkeeper history. That target is stored before the UI enables **Ready in goal**. The API does not reveal it until release. Use Left/Right or A/D to move; hold Space, Up, or W to jump. Touch buttons provide the same controls. The keeper position is frozen at impact and submitted once.
+- **Jev's kick:** Jev chooses a typed target using only completed goalkeeper history. That target is stored before the countdown starts. The API does not reveal it until automatic release. Use Left/Right or A/D to move; hold Space, Up, or W to jump. Touch buttons provide the same controls. The keeper position is frozen at impact and submitted once.
 - Five kicks each, most goals wins. Equal scores are a draw. **Try again** starts a new root run and keeps this browser's human goals/attempts.
 
 The white kit is always you; purple is always Jev. The players swap roles. Results and score changes appear after ball arrival. The right panel shows one match ID, ten nested turns, actual Render task IDs, statuses, timestamps, and retries. Task durations include waiting for input. Animation frames and key events run locally.
 
 ## Timing and recovery
+
+Results stay visible for 1.2 seconds, then roles switch automatically once the next Render turn is ready. Jev’s committed shot releases after a 3-2-1 countdown (2.1 seconds). The player can position the goalkeeper during that countdown. Automatic transitions stop when the pitch is out of view, the tab is hidden, or help is open; a returning player gets a fresh countdown. A shot already in flight continues under the existing server deadlines.
 
 Jev has 850 ms from your release to choose a save. Browser clock calibration is approximate; network transit and inference consume that window. A late or unavailable answer cannot save. The ball takes 180 ms of run-up and 1,300 ms of flight. The browser does not restart the ball clock when a decision arrives. The keeper moves toward Jev's chosen zone, never the exact shot coordinates. A fast decision waits until the final 650 ms of flight to dive, reaching the zone at ball arrival. Late browser delivery still requires at least 450 ms of movement. Saves use the zone's reach area, not a simulated glove collision.
 

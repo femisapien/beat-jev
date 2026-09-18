@@ -18,6 +18,7 @@ import {
 import { language, serverTime } from "./api";
 import useGame from "./useGame";
 import useKeeperControls from "./useKeeperControls";
+import useTurnFlow from "./useTurnFlow";
 import {
   directPath,
   groundAim,
@@ -66,9 +67,30 @@ export default function App() {
   );
   const seen = useRef(0),
     startingJev = useRef(false);
+  const stage = useRef<HTMLDivElement>(null);
   const [keeperActive, setKeeperActive] = useState(false);
-  const controls = useKeeperControls(keeperActive);
-  const defending = (flight?.number || game?.turn?.number || 1) % 2 === 0;
+  const turn = flight?.number || game?.turn?.number || 1;
+  const defending = turn % 2 === 0;
+  const completed = view === "result" && flight?.reaction?.number === 10;
+  const ready =
+    !!game?.ready && !!game.turn?.ready && view === "aim" && !sending && !error;
+  const { countdown, inView } = useTurnFlow({
+    stage,
+    turn,
+    view,
+    ready,
+    nextReady: !!game?.ready && !!game.turn?.ready && game.turn.number === turn + 1,
+    completed,
+    paused: about || !!error || !!game?.abandoned,
+    next,
+    kick: faceJev,
+  });
+  const controls = useKeeperControls(
+    (keeperActive || countdown !== null) && inView && !about,
+  );
+  useEffect(() => {
+    if (ready && inView && !about) stage.current?.focus({ preventScroll: true });
+  }, [ready, turn, inView, about]);
   useEffect(() => {
     const m = matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReduced(m.matches);
@@ -159,8 +181,6 @@ export default function App() {
     if (landed && flight?.reaction) setView("result");
   }, [landed, flight?.reaction]);
   const shot = flight?.reaction;
-  const ready =
-    !!game?.ready && !!game.turn?.ready && view === "aim" && !sending && !error;
   function start() {
     seen.current = 0;
     controls.reset();
@@ -203,12 +223,14 @@ export default function App() {
   async function faceJev() {
     if (!ready || !game) return;
     startingJev.current = true;
+    setKeeperActive(true);
     const response = await dispatch({
       action: "ready",
       matchId: game.id,
       number: game.attempts + 1,
     });
     if (response?.attack) incoming(response.attack);
+    else setKeeperActive(false);
     startingJev.current = false;
   }
   function next() {
@@ -217,7 +239,6 @@ export default function App() {
     setLanded(false);
     setView("aim");
   }
-  const completed = view === "result" && shot?.number === 10;
   const visibleShots = (game?.shots || []).filter(
     (s) => !(view === "flight" && s.number === flight?.number),
   );
@@ -296,6 +317,10 @@ export default function App() {
               </div>
               <div
                 className="stage"
+                ref={stage}
+                data-turn={turn}
+                data-phase={view}
+                data-ready={ready && !defending}
                 tabIndex={0}
                 role="group"
                 aria-label={
@@ -318,7 +343,7 @@ export default function App() {
                   }
                   if (e.code === "Space" || e.key === "Enter") {
                     e.preventDefault();
-                    shoot(aim);
+                    if (!e.repeat) shoot(aim);
                   }
                 }}
               >
@@ -380,6 +405,16 @@ export default function App() {
                     {message}
                   </div>
                 )}
+                {countdown !== null && (
+                  <div
+                    className="turn-countdown"
+                    role="status"
+                    aria-label={`You're in goal. Jev shoots in ${countdown}`}
+                  >
+                    <span>YOU’RE IN GOAL</span>
+                    <strong key={countdown}>{countdown}</strong>
+                  </div>
+                )}
                 {(ready || keeperActive) && (
                   <div className="aim-hint">
                     {defending
@@ -401,7 +436,7 @@ export default function App() {
                   ].map(([key, label]) => (
                     <button
                       key={key}
-                      disabled={!keeperActive}
+                      disabled={!keeperActive && countdown === null}
                       aria-label={`Keeper ${key}`}
                       onPointerDown={(e) => {
                         e.preventDefault();
@@ -505,45 +540,9 @@ export default function App() {
                     <RotateCcw size={16} />
                     Try again
                   </button>
-                ) : view === "result" ? (
-                  <button
-                    className="primary"
-                    disabled={!game?.ready || !game?.turn?.ready}
-                    onClick={next}
-                  >
-                    {game?.turn?.ready
-                      ? defending
-                        ? "Your kick"
-                        : "Keep goal"
-                      : "Preparing…"}
-                    <ArrowRight size={16} />
-                  </button>
-                ) : session ? (
-                  <button
-                    className="primary"
-                    disabled={!ready}
-                    onClick={() => (defending ? void faceJev() : shoot(aim))}
-                  >
-                    {ready ? (
-                      defending ? (
-                        "Ready in goal"
-                      ) : (
-                        "Shoot"
-                      )
-                    ) : (
-                      <>
-                        <LoaderCircle size={16} className="spin" />
-                        {view === "flight"
-                          ? landed
-                            ? "Finishing"
-                            : "In flight"
-                          : "Preparing"}
-                      </>
-                    )}
-                  </button>
-                ) : (
+                ) : !session ? (
                   <span className="controls-note">Score more than Jev.</span>
-                )}
+                ) : null}
               </div>
             </section>
             {error && (
@@ -588,7 +587,7 @@ export default function App() {
           <Trace
             trace={trace}
             turn={game?.turn}
-            released={session?.command.action === "shoot"}
+            released={session?.command.action === "shoot" && session.command.number === game?.turn?.number}
             waiting={sending || (!!session && !trace)}
             shot={shot}
           />
@@ -612,7 +611,8 @@ export default function App() {
           <h2>Five kicks each.</h2>
           <p>
             Tap or draw your shot. Jev has 850 ms to react. Then swap: Jev
-            chooses a target, and you use Left/Right and Space to keep it out.
+            chooses a target. After the countdown, use Left/Right and Space to
+            keep it out.
             Most goals wins; equal scores are a draw.
           </p>
           <ol>

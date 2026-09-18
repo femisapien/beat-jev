@@ -430,6 +430,28 @@ h1 {
 .result-word.wide {
   color: #e1e7d9;
 }
+.turn-countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  pointer-events: none;
+  color: #ebf7df;
+  text-shadow: 0 3px 25px #0c251da8;
+}
+.turn-countdown span {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.turn-countdown strong {
+  font-size: clamp(60px, 8vw, 90px);
+  line-height: 1;
+  animation: result-in 0.2s ease-out;
+}
 .pending-pill {
   position: absolute;
   bottom: 23px;

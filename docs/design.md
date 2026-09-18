@@ -4,7 +4,7 @@ A five-round shootout, with one kick per player per round. Route Lab stays uncha
 
 Enter a name, take a shot, then take the gloves. The white kit is always the human and purple is always Jev. The scoreboard shows both scores; two rows of five markers preserve each player's attempts. A draw is a valid result. Try again starts a new match.
 
-On human kicks, tap a target or draw a path and release to shoot. On Jev kicks, click Ready in goal, move with Left/Right or A/D, and hold Space, Up, or W to jump. Mobile buttons perform the same actions. Jev's target is committed before the human moves and hidden until release. Give the player control during flight, then freeze the keeper at impact.
+On human kicks, tap a target or draw a path and release to shoot. After a brief result, switch roles automatically. A 3-2-1 countdown announces Jev’s kick. Move with Left/Right or A/D, and hold Space, Up, or W to jump. Mobile buttons perform the same actions. Jev's target is committed before the human moves and hidden until release. Give the player control during the countdown and flight, then freeze the keeper at impact. Pause automatic transitions when the pitch is out of view, the tab is hidden, or the help panel is open. Keep only Play, Try again, and recovery buttons; shots and saves are direct input.
 
 Use human-proportioned Quaternius CC0 figures, Three.js, and React Three Fiber. Reuse the pitch and swap kits when roles change. Keep controls and current role visible. Respect reduced motion. Align result text and score changes with ball arrival; never show a save before the ball reaches the keeper.
 
