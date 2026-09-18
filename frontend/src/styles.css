@@ -238,7 +238,8 @@ main {
   display: flex;
   justify-content: space-between;
   pointer-events: none;
-  color: #acbcb2;
+  color: #f0f4ee;
+  text-shadow: 0 1px 5px #0d201b, 0 0 12px #0d201b;
   font-size: 9px;
   letter-spacing: 0.15em;
 }

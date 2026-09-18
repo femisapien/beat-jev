@@ -1,22 +1,10 @@
-This is the standard FREE version of the Universal Base Characters Kit, which only contains 
-a portion of the models . You can buy the SOURCE version which has all the models with rigged .blends,
-and Unity(URP), Unreal Engine and Godot projects
-with custom shaders already set up.
+This directory contains assets under different licenses.
+The repository's source-code license does not replace these licenses.
 
-You can get the other version from the website https://quaternius.com
+MakeHuman system assets, the shirt, gloves and socks: CC0 1.0.
+https://creativecommons.org/publicdomain/zero/1.0/legalcode
 
--------------------------------------------------------
-License:
-CC0 1.0 Universal (CC0 1.0) 
-Public Domain Dedication
-https://creativecommons.org/publicdomain/zero/1.0/
-
-------------------------------------------------------
-Models by @Quaternius
-Consider supporting me on Patreon!
-
-https://www.patreon.com/quaternius
-
--------------------------------------------------------
-Join the Discord Server:
-https://discord.gg/vJqnRUYRfT
+Shorts (elvs_male_swim_shorts1) by Elvaerwyn: CC BY, as published by the
+MakeHuman Community. The source does not specify a license version.
+https://static.makehumancommunity.org/assets/assetpacks/pants03.html
+Retain the attribution and modification notice in README.txt and /credits.html.

@@ -19,15 +19,15 @@ test("canvas-relative projection preserves goal coordinates at desktop and mobil
     const rect = { left: 132, top: 359, width, height };
     const cam = new THREE.PerspectiveCamera(
       Math.max(
-        24,
-        THREE.MathUtils.radToDeg(2 * Math.atan(6.3 / ((23 * width) / height))),
+        32,
+        THREE.MathUtils.radToDeg(2 * Math.atan(5.8 / ((18.5 * width) / height))),
       ),
       width / height,
       0.1,
       100,
     );
-    cam.position.set(0, 4.5, 17);
-    cam.lookAt(0, 0.65, 0.5);
+    cam.position.set(0, 3.2, 12.5);
+    cam.lookAt(0, 1.25, -2);
     cam.updateMatrixWorld();
     for (const p of [
       new THREE.Vector3(0, 1.22, -6),

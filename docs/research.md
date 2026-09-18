@@ -16,6 +16,8 @@ TypeSafe's <a href="https://docs.typesafe.ai/concepts/state" target="_blank" rel
 
 The first reactive version received only numeric crossing coordinates. It chose the expected action in 13 of 16 live cases, with errors on high, below-goal and near-center shots. The revised version adds calculated horizontal lane, height and whether the path enters the goal. It matched all 16 cases in one live run. These are smoke tests, not a statistically reliable accuracy estimate. Run `tests/keeper-live.ts` to repeat the checks against the current model.
 
-## Characters
+## Characters and stadium
 
-<a href="https://quaternius.com/packs/universalbasecharacters.html" target="_blank" rel="noopener noreferrer">Quaternius Universal Base Characters</a> supplies the human mesh, skeleton, skin textures, eyes, and hair under CC0. The free Standard pack is sufficient. The game uses Three.js and React Three Fiber, custom football materials, and bone poses for the kick and dive. It uses no assets from commercial football games.
+The September 18 art pass replaces the original placeholder with a MakeHuman / MPFB human rig and fitted clothing. The runtime uses Three.js and React Three Fiber, PBR materials, a textured pitch, instanced spectators and procedural kick/dive poses. It does not use motion capture or professional football player likenesses.
+
+Source and license review: <a href="https://static.makehumancommunity.org/assets/assetpacks.html" target="_blank" rel="noopener noreferrer">MakeHuman asset packs</a>, <a href="https://ambientcg.com/view?id=Grass005" target="_blank" rel="noopener noreferrer">ambientCG Grass005</a>, and <a href="https://polyhaven.com/a/stadium_01" target="_blank" rel="noopener noreferrer">Poly Haven Stadium 01</a>. Most assets are CC0. The Elvaerwyn shorts are CC BY; attribution and modifications are listed in the game’s asset credits.

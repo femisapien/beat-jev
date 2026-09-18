@@ -44,7 +44,7 @@ Postgres row locks protect score updates. Immutable input, target, reaction, and
 - `keeper.ts` and `keeper.py` own both TypeSafe calls. Jev receives structured observations, not images or nicknames. Code resolves collisions.
 - Render Postgres stores nicknames, paths, goalkeeper inputs, and scores. A hashed browser token gates matches and traces. There is no public leaderboard or cross-browser login.
 - Blueprints independently deploy paid web services, usage-billed workflows, and paid Postgres. They prompt for TypeSafe and Render API keys.
-- The human rig is Quaternius CC0, with source credit in `frontend/public/models`.
+- The human rig uses MakeHuman / MPFB. Asset credits and licenses are in `frontend/public/models` and `/credits.html`.
 
 ## Verification
 

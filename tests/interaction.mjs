@@ -84,17 +84,17 @@ async function recorded(number) {
 function project(v, box) {
   const cam = new THREE.PerspectiveCamera(
     Math.max(
-      24,
+      32,
       THREE.MathUtils.radToDeg(
-        2 * Math.atan(6.3 / (23 * (box.width / box.height))),
+        2 * Math.atan(5.8 / (18.5 * (box.width / box.height))),
       ),
     ),
     box.width / box.height,
     0.1,
     100,
   );
-  cam.position.set(0, 4.5, 17);
-  cam.lookAt(0, 0.65, 0.5);
+  cam.position.set(0, 3.2, 12.5);
+  cam.lookAt(0, 1.25, -2);
   cam.updateMatrixWorld();
   const p = new THREE.Vector3(...v).project(cam);
   return {

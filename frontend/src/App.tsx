@@ -640,6 +640,7 @@ export default function App() {
             shot coordinates go to TypeSafe; your nickname is not sent. The side
             panel shows real task runs and Jev’s latest decision.
           </p>
+          <a href="/credits.html" target="_blank" rel="noopener noreferrer">Asset credits ↗</a>
         </Panel>
       )}
     </div>

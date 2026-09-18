@@ -1,71 +1,103 @@
-"""Prepare the CC0 Quaternius base mesh for the game. No raster edits.
-Usage: python3 scripts/prepare-character.py path/to/unzipped/pack
-"""
-import json, struct, pathlib, sys, copy
-root = pathlib.Path(sys.argv[1])
-source = next(root.rglob('Superhero_Male_FullBody.gltf'))
-d = json.loads(source.read_text())
-blob = bytearray(source.with_suffix('.bin').read_bytes())
-
-def append(data):
-    while len(blob) % 4: blob.append(0)
-    offset = len(blob); blob.extend(data)
-    d['bufferViews'].append(dict(buffer=0, byteOffset=offset, byteLength=len(data)))
-    return len(d['bufferViews'])-1
-
-def values(accessor):
-    a=d['accessors'][accessor]; v=d['bufferViews'][a['bufferView']]
-    components={'SCALAR':1,'VEC2':2,'VEC3':3,'VEC4':4}[a['type']]
-    fmt={5123:'H',5125:'I',5126:'f'}[a['componentType']]
-    return list(struct.iter_unpack('<'+fmt*components, blob[v.get('byteOffset',0)+a.get('byteOffset',0):v.get('byteOffset',0)+a.get('byteOffset',0)+a['count']*components*struct.calcsize(fmt)]))
-
-# Reuse the original skinned topology. Materials form a jersey, shorts, socks and boots.
-body=d['meshes'][2]; prim=body['primitives'][0]; positions=values(prim['attributes']['POSITION']); indices=[i[0] for i in values(prim['indices'])]
-for name, color in [('jersey',[.92,.94,.88,1]),('shorts',[.035,.09,.07,1]),('socks',[.92,.94,.88,1]),('boots',[.025,.035,.03,1])]:
-    d['materials'].append(dict(name=name,pbrMetallicRoughness=dict(baseColorFactor=color,metallicFactor=0,roughnessFactor=.85)))
-groups={i:[] for i in range(2,7)}
-for i in range(0,len(indices),3):
-    tri=indices[i:i+3]; x,y,z=[sum(positions[j][k] for j in tri)/3 for k in range(3)]
-    material=2
-    if y<.105: material=6
-    elif y<.45: material=5
-    elif .66<y<1.015: material=4
-    elif 1.015<=y<1.50 and abs(x)<.48: material=3
-    groups[material].extend(tri)
-body['primitives']=[]
-for mat, ix in groups.items():
-    p=copy.deepcopy(prim); p['attributes']={k:v for k,v in p['attributes'].items() if not k.startswith('COLOR')};p['material']=mat
-    view=append(struct.pack('<'+'H'*len(ix),*ix));d['accessors'].append(dict(bufferView=view,componentType=5123,count=len(ix),type='SCALAR'))
-    p['indices']=len(d['accessors'])-1;body['primitives'].append(p)
-# Only keep textures used on the skin and eyes. The hair uses a matte material.
-for m in d['materials']:
-    m.pop('normalTexture',None);m.pop('occlusionTexture',None);m.pop('extensions',None)
-    m['pbrMetallicRoughness'].pop('metallicRoughnessTexture',None)
-    m['pbrMetallicRoughness']['roughnessFactor']=.78
-m=d['materials'][0]['pbrMetallicRoughness'];m.pop('baseColorTexture',None);m['baseColorFactor']=[.026,.018,.014,1]
-old_images=d['images'];old_textures=d['textures'];d['images']=[];d['textures']=[]
-for m in d['materials']:
-    t=m['pbrMetallicRoughness'].get('baseColorTexture')
-    if t:
-        old=old_images[old_textures[t['index']]['source']]; data=(source.parent/old['uri']).read_bytes()
-        d['images'].append(dict(bufferView=append(data),mimeType='image/png'))
-        d['textures'].append(dict(source=len(d['images'])-1));t['index']=len(d['textures'])-1
-# Add cropped hair geometry to the same skeleton, weighted to the head.
-hair=next(p for p in root.rglob('Hair_Buzzed.gltf') if 'Origin at 0' in str(p)); h=json.loads(hair.read_text());hb=hair.with_suffix('.bin').read_bytes()
-aoffset=len(d['accessors']);voffset=len(d['bufferViews']);bloboffset=len(blob)
-while bloboffset%4:blob.append(0);bloboffset+=1
-blob.extend(hb)
-for v in h['bufferViews']:d['bufferViews'].append({**v,'buffer':0,'byteOffset':v.get('byteOffset',0)+bloboffset})
-for a in h['accessors']:d['accessors'].append({**a,'bufferView':a['bufferView']+voffset})
-hp=h['meshes'][0]['primitives'][0];attrs={k:v+aoffset for k,v in hp['attributes'].items() if k in ['POSITION','NORMAL','TEXCOORD_0']}
-count=h['accessors'][hp['attributes']['POSITION']]['count'];skin_id=next(n['skin'] for n in d['nodes'] if n.get('name')=='SuperHero_Male');head_id=next(i for i,n in enumerate(d['nodes']) if n.get('name')=='Head');joint=d['skins'][skin_id]['joints'].index(head_id)
-for attr,data,ctype in [('JOINTS_0',struct.pack('<'+'H'*count*4,*([joint,0,0,0]*count)),5123),('WEIGHTS_0',struct.pack('<'+'f'*count*4,*([1,0,0,0]*count)),5126)]:
-    view=append(data);d['accessors'].append(dict(bufferView=view,componentType=ctype,count=count,type='VEC4'));attrs[attr]=len(d['accessors'])-1
-d['meshes'].append(dict(name='Cropped hair',primitives=[dict(attributes=attrs,indices=hp['indices']+aoffset,material=0)]))
-d['nodes'].append(dict(name='Hair',mesh=len(d['meshes'])-1,skin=skin_id));d['scenes'][0]['nodes'].append(len(d['nodes'])-1)
-while len(blob)%4:blob.append(0)
-d['buffers']=[dict(byteLength=len(blob))];d['asset']['copyright']='CC0, Quaternius. Football materials and packaging by Beat Jev.'
-j=json.dumps(d,separators=(',',':')).encode();j+=b' '*((-len(j))%4)
-out=struct.pack('<4sII',b'glTF',2,28+len(j)+len(blob))+struct.pack('<I4s',len(j),b'JSON')+j+struct.pack('<I4s',len(blob),b'BIN\0')+blob
-pathlib.Path('frontend/public/models/footballer.glb').write_bytes(out)
-print('Character prepared:',len(out),'bytes')
+"""Optional art build. See docs/art-assets.md; not needed to run or deploy."""
+from pathlib import Path
+import sys, bpy
+ROOT = Path.cwd()
+ART = ROOT / 'work/art-tools'
+sys.path.insert(0, str(ART / 'mpfb-source'))
+bpy.utils.extension_path_user = lambda *a, **kw: str(ART / 'mpfb-user')
+import mpfb
+bpy.context.preferences.addons.new().module = 'mpfb'
+mpfb.register()
+mpfb.set_preference('mpfb_user_data', str(ART / 'mpfb-user'))
+from mpfb.services.humanservice import HumanService
+from mpfb.services.targetservice import TargetService
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+macro = TargetService.get_default_macro_info_dict()
+macro.update(gender=1., age=.5, muscle=.72, weight=.48, height=.55, proportions=.6)
+macro['race'] = {'asian': .15, 'caucasian': .6, 'african': .25}
+body = HumanService.create_human(macro_detail_dict=macro)
+body.name = 'Athlete'
+rig = HumanService.add_builtin_rig(body, 'game_engine')
+assets = ART / 'assets'
+HumanService.set_character_skin(str(assets/'skins/young_caucasian_male/young_caucasian_male.mhmat'), body, skin_type='MAKESKIN')
+for asset, kind, name in [
+ ('eyes/low-poly/low-poly.mhclo', 'Eyes', 'Eyes'),
+ ('eyebrows/eyebrow001/eyebrow001.mhclo', 'Eyebrows', 'Brows'),
+ ('hair/short01/short01.mhclo','Hair','Hair'),
+ ('clothes/toigo_basic_tucked_t-shirt/toigo_basic_tucked_t-shirt.mhclo','Clothes','Jersey'),
+ ('clothes/elvs_male_swim_shorts1/elvs_male_swim_shorts1.mhclo','Clothes','Shorts'),
+ ('clothes/joepal_crude_high_socks/joepal_crude_high_socks.mhclo','Clothes','Socks'),
+ ('clothes/shoes06/shoes06.mhclo','Clothes','Boots'),
+ ('clothes/toigo_gloves_short/toigo_gloves_short.mhclo','Clothes','Gloves'),
+]:
+ print('ASSET', asset, flush=True)
+ obj = HumanService.add_mhclo_asset(str(assets/asset), body, asset_type=kind, subdiv_levels=0)
+ obj.name = name
+ if name in ['Jersey','Shorts','Socks','Boots','Gloves']:
+  mat = bpy.data.materials.new(name.lower()); mat.use_nodes=True
+  principled=mat.node_tree.nodes.get('Principled BSDF')
+  principled.inputs['Base Color'].default_value=(.8,.8,.8,1)
+  principled.inputs['Roughness'].default_value=.8
+  obj.data.materials.clear(); obj.data.materials.append(mat)
+# Use glTF-native PBR materials with one shared skin texture.
+def textured(obj, image_path, name, cutout=False):
+ mat=bpy.data.materials.new(name); mat.use_nodes=True
+ p=mat.node_tree.nodes.get('Principled BSDF'); p.inputs['Roughness'].default_value=.72
+ image=mat.node_tree.nodes.new('ShaderNodeTexImage'); image.image=bpy.data.images.load(str(image_path),check_existing=True)
+ mat.node_tree.links.new(image.outputs['Color'],p.inputs['Base Color'])
+ if cutout:
+  mat.node_tree.links.new(image.outputs['Alpha'],p.inputs['Alpha'])
+  mat.surface_render_method='DITHERED'
+ obj.data.materials.clear(); obj.data.materials.append(mat)
+ for face in obj.data.polygons: face.material_index=0
+textured(body, assets/'skins/young_caucasian_male/young_lightskinned_male_diffuse.png', 'skin')
+textured(bpy.data.objects['Hair'], assets/'hair/short01/short01_diffuse.png', 'hair', True)
+textured(bpy.data.objects['Brows'], assets/'eyebrows/eyebrow001/eyebrow001.png', 'brows', True)
+textured(bpy.data.objects['Eyes'], assets/'eyes/materials/brown_eye.png', 'eyes')
+# Keep fingers on the body so removing gloves for the kicker leaves hands.
+for mod in list(body.modifiers):
+ if 'toigo_gloves' in mod.name: body.modifiers.remove(mod)
+# Bake generated body shape keys, keep armature skinning; apply hide masks.
+for obj in list(bpy.data.objects):
+ if obj.type != 'MESH': continue
+ bpy.context.view_layer.objects.active=obj
+ obj.select_set(True)
+ if obj.data.shape_keys:
+  bpy.ops.object.shape_key_add(from_mix=True)
+  for kb in list(obj.data.shape_keys.key_blocks)[:-1]: obj.shape_key_remove(kb)
+  obj.shape_key_clear()
+ for mod in list(obj.modifiers):
+  if mod.type != 'ARMATURE':
+   try: bpy.ops.object.modifier_apply(modifier=mod.name)
+   except Exception as e: print('MODIFIER',obj.name,mod.name,e)
+ for p in obj.data.polygons: p.use_smooth=True
+ obj.select_set(False)
+# Remove the sock section bundled in the trainers, which overlaps the kit socks.
+import bmesh
+boots=bpy.data.objects['Boots']
+bm=bmesh.new(); bm.from_mesh(boots.data)
+bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z > .13], context='VERTS')
+bm.to_mesh(boots.data); bm.free()
+socks=bpy.data.objects['Socks']
+bm=bmesh.new(); bm.from_mesh(socks.data)
+bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < .115], context='VERTS')
+bm.to_mesh(socks.data); bm.free()
+# The shirt tucks into the waistband instead of exposing a gap.
+shirt=bpy.data.objects['Jersey']
+lowest=min(v.co.z for v in shirt.data.vertices)
+for v in shirt.data.vertices:
+ if v.co.z < lowest+.035: v.co.z -= .025
+# Separate cuff material for the runtime kit colors.
+trim=bpy.data.materials.new('trim');trim.use_nodes=True
+trim.node_tree.nodes.get('Principled BSDF').inputs['Base Color'].default_value=(.02,.04,.03,1)
+shirt.data.materials.append(trim)
+for p in shirt.data.polygons:
+ c=p.center
+ if (abs(c.x)>.29 and c.z>1.25) : p.material_index=1
+for obj in list(bpy.data.objects):
+ if obj.type!='MESH': continue
+ bm=bmesh.new();bm.from_mesh(obj.data);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(obj.data);bm.free()
+print('MESHES', [(o.name, len(o.data.vertices)) for o in bpy.data.objects if o.type=='MESH'])
+bpy.ops.wm.save_as_mainfile(filepath=str(ART/'athlete.blend'))
+bpy.ops.export_scene.gltf(filepath=str(ROOT/'frontend/public/models/athlete.glb'), export_format='GLB', export_animations=False, export_morph=False, export_yup=True)
