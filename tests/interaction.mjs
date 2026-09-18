@@ -7,7 +7,7 @@ const browser = await chromium.launch({ channel: "chrome" });
 const page = await browser.newPage({
   viewport: mobile
     ? { width: 390, height: 844 }
-    : { width: 1440, height: 1050 },
+    : { width: 1440, height: 900 },
   hasTouch: mobile,
   isMobile: mobile,
 });
@@ -181,11 +181,13 @@ for (let round = 1; round <= 5; round++) {
     assert.equal(human.outcome, "goal");
   }
   if (round === 1) {
-    // Reading below the pitch must not start an unseen opponent kick.
-    await page.locator("footer").scrollIntoViewIfNeeded();
+    // Pause when reading away from the pitch, including the desktop help dialog.
+    if (mobile) await page.locator("footer").scrollIntoViewIfNeeded();
+    else await page.getByRole("button", { name: "How it works", exact: true }).click();
     await page.waitForTimeout(3000);
     assert.equal(commands.filter(c => c.action === "ready").length, 0);
-    await page.locator(".stage").scrollIntoViewIfNeeded();
+    if (mobile) await page.locator(".stage").scrollIntoViewIfNeeded();
+    else await page.getByRole("button", { name: "Close How it works", exact: true }).click();
   }
   await phase(round * 2, "aim");
   await page.locator(".turn-countdown").waitFor({ state: "visible" });

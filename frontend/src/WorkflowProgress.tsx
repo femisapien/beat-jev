@@ -10,7 +10,6 @@ export default function WorkflowProgress({
   session: Session | null;
   trace: TraceData | null;
 }) {
-  const isStarting = session?.command.action === "start";
   const failed = trace && ["failed", "canceled"].includes(trace.status);
   const registered = !!game;
   const began = !!game?.started;
@@ -41,15 +40,21 @@ export default function WorkflowProgress({
         {stages.map((s, i) => (
           <li
             key={s.label}
+            aria-label={s.label}
             className={
               s.done ? "done" : s.active ? (failed ? "failed" : "active") : ""
             }
             aria-current={s.active ? "step" : undefined}
           >
             <span className="step-bar" />
-            <span>
-              <b>{i > 1 && i < 7 ? i - 1 : s.done ? "✓" : "·"}</b>
-              {s.label}
+            <span aria-hidden="true">
+              {i > 1 && i < 7
+                ? i - 1
+                : i === 1
+                  ? "Start"
+                  : i === 7
+                    ? "End"
+                    : s.label}
             </span>
           </li>
         ))}

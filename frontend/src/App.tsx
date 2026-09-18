@@ -285,14 +285,7 @@ export default function App() {
         </nav>
       </header>
       <main>
-        <div className="intro">
-          <div>
-            <div className="eyebrow">FIVE KICKS EACH</div>
-            <h1>Can you beat Jev?</h1>
-          </div>
-          <p>Take a shot. Then take the gloves.</p>
-        </div>
-        <WorkflowProgress game={game} session={session} trace={trace} />
+        <h1 className="sr-only">Beat Jev penalty shootout</h1>
         <div className="game-layout">
           <div className="play-column">
             <section className="game" aria-label="Penalty shootout">
@@ -550,7 +543,7 @@ export default function App() {
                 {error} Your saved shots are safe.
               </p>
             )}
-            <div className="below-game">
+            <div className="game-extras">
               <div className="career">
                 <span>Your record</span>
                 <strong>
@@ -559,38 +552,44 @@ export default function App() {
                 </strong>
                 <span>{game?.totalAttempts || 0} attempts</span>
               </div>
+              {!defending && (
+                <details className="keyboard-controls">
+                  <summary>Direction controls</summary>
+                  <div>
+                    {[
+                      ["High left", -0.62, 0.76],
+                      ["High center", 0, 0.76],
+                      ["High right", 0.62, 0.76],
+                      ["Low left", -0.62, 0.25],
+                      ["Low center", 0, 0.25],
+                      ["Low right", 0.62, 0.25],
+                    ].map(([label, x, y]) => (
+                      <button
+                        key={label}
+                        disabled={!ready}
+                        onClick={() => shoot({ x: Number(x), y: Number(y) })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
-            {!defending && (
-              <details className="keyboard-controls">
-                <summary>Direction controls</summary>
-                <div>
-                  {[
-                    ["High left", -0.62, 0.76],
-                    ["High center", 0, 0.76],
-                    ["High right", 0.62, 0.76],
-                    ["Low left", -0.62, 0.25],
-                    ["Low center", 0, 0.25],
-                    ["Low right", 0.62, 0.25],
-                  ].map(([label, x, y]) => (
-                    <button
-                      key={label}
-                      disabled={!ready}
-                      onClick={() => shoot({ x: Number(x), y: Number(y) })}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </details>
-            )}
           </div>
-          <Trace
-            trace={trace}
-            turn={game?.turn}
-            released={session?.command.action === "shoot" && session.command.number === game?.turn?.number}
-            waiting={sending || (!!session && !trace)}
-            shot={shot}
-          />
+          <div className="workflow-column">
+            <WorkflowProgress game={game} session={session} trace={trace} />
+            <Trace
+              trace={trace}
+              turn={game?.turn}
+              released={
+                session?.command.action === "shoot" &&
+                session.command.number === game?.turn?.number
+              }
+              waiting={sending || (!!session && !trace)}
+              shot={shot}
+            />
+          </div>
         </div>
       </main>
       <footer>

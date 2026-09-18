@@ -63,15 +63,16 @@ svg {
   flex-shrink: 0;
 }
 .app {
-  max-width: 1256px;
+  --game-height: max(500px, calc(100dvh - 160px));
   min-height: 100dvh;
-  padding: 0 40px;
+  padding: 0 24px;
   margin: auto;
   display: flex;
   flex-direction: column;
 }
 header {
-  height: 90px;
+  height: 64px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -150,33 +151,13 @@ nav,
 .deploy-options a:hover {
   background: #f0e8ff;
 }
-.intro {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  padding: 35px 0 25px;
-}
-.eyebrow {
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.16em;
-  color: #66756e;
-  margin-bottom: 9px;
-}
-h1 {
-  font-size: 40px;
-  letter-spacing: -1.7px;
-  line-height: 1.1;
-  margin: 0;
-  font-weight: 650;
-}
-.intro p {
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.65;
-  margin: 0 0 2px;
+main {
+  padding-top: 14px;
 }
 .game {
+  display: flex;
+  flex-direction: column;
+  height: var(--game-height);
   overflow: hidden;
   border-radius: 13px;
   background: #132923;
@@ -184,7 +165,8 @@ h1 {
   box-shadow: 0 10px 25px #1b352d0a;
 }
 .scoreboard {
-  height: 65px;
+  height: 54px;
+  flex-shrink: 0;
   padding: 0 30px;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -239,7 +221,8 @@ h1 {
   font-size: 14px;
 }
 .stage {
-  height: 475px;
+  flex: 1;
+  min-height: 0;
   position: relative;
   isolation: isolate;
   touch-action: none;
@@ -336,7 +319,8 @@ h1 {
   color: #f4ffe9;
 }
 .game-controls {
-  height: 77px;
+  min-height: 84px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 20px;
@@ -477,12 +461,13 @@ h1 {
   color: #e0eadb;
   font-size: 14px;
 }
-.below-game {
+.game-extras {
   display: flex;
-  justify-content: flex-end;
-  align-items: start;
-  gap: 25px;
-  padding-top: 16px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px 20px;
+  min-height: 40px;
 }
 .probabilities > div {
   display: grid;
@@ -502,12 +487,13 @@ h1 {
 }
 .career {
   display: flex;
+  margin-left: auto;
   gap: 12px;
   align-items: center;
   justify-content: flex-end;
   font-size: 10px;
   color: #60705e;
-  padding-top: 15px;
+  padding-top: 12px;
 }
 .career strong {
   color: #384d35;
@@ -520,8 +506,12 @@ h1 {
 .keyboard-controls {
   font-size: 10px;
   color: #75816f;
-  margin: 12px 0 15px;
+  margin: 4px 0 8px;
+  order: -1;
   max-width: 400px;
+}
+.keyboard-controls[open] {
+  width: min(360px, 100%);
 }
 .keyboard-controls summary {
   cursor: pointer;
@@ -543,7 +533,7 @@ h1 {
 }
 footer {
   margin-top: auto;
-  min-height: 78px;
+  min-height: 42px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -631,14 +621,6 @@ footer a {
     transform: scale(1);
   }
 }
-@media (min-width: 1500px) {
-  .stage {
-    height: 530px;
-  }
-  .intro {
-    padding-top: 40px;
-  }
-}
 @media (max-width: 900px) {
   .app {
     padding: 0 22px;
@@ -646,22 +628,6 @@ footer a {
   .brand small,
   .brand-slash {
     display: none;
-  }
-  .intro p {
-    font-size: 12px;
-  }
-  .stage {
-    height: 450px;
-  }
-  .below-game {
-    justify-content: flex-start;
-  }
-  .career {
-    justify-content: flex-start;
-    padding: 0 0 10px;
-  }
-  .below-game {
-    gap: 0;
   }
   nav,
   .project-links {
@@ -676,10 +642,10 @@ footer a {
 }
 @media (max-width: 600px) {
   .app {
-    padding: 0 15px;
+    padding: 0 10px;
   }
   header {
-    height: 73px;
+    height: 58px;
     gap: 12px;
   }
   .brand {
@@ -708,25 +674,6 @@ footer a {
   .deploy-button img {
     width: 114px;
   }
-  .intro {
-    padding: 26px 0 21px;
-    display: block;
-  }
-  .intro h1 {
-    font-size: 32px;
-    letter-spacing: -1.3px;
-  }
-  .intro p {
-    margin-top: 9px;
-    font-size: 12px;
-  }
-  .intro p br {
-    display: none;
-  }
-  .eyebrow {
-    font-size: 9px;
-    margin-bottom: 9px;
-  }
   .scoreboard {
     height: 57px;
     padding: 0 18px;
@@ -746,9 +693,6 @@ footer a {
   }
   .score strong {
     font-size: 25px;
-  }
-  .stage {
-    height: 392px;
   }
   .stage-top {
     left: 15px;
@@ -816,7 +760,7 @@ footer a {
     margin-top: 5px;
   }
   footer {
-    min-height: 66px;
+    min-height: 52px;
     font-size: 10px;
   }
   footer a {
@@ -824,9 +768,6 @@ footer a {
   }
   .career {
     font-size: 10px;
-  }
-  .below-game {
-    padding-top: 7px;
   }
   .probabilities > div {
     grid-template-columns: 80px 1fr 32px;
@@ -842,33 +783,30 @@ footer a {
 }
 
 .match-workflow {
-  margin: 0 0 18px;
+  margin: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fff9;
-  padding: 16px 20px 0;
+  padding: 12px 14px;
 }
 .match-steps {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: 1.5fr 1.2fr repeat(5, minmax(0, 1fr)) 1.2fr;
+  gap: 5px;
   list-style: none;
   padding: 0;
-  margin: 0 0 8px;
+  margin: 0;
 }
 .match-steps li {
   min-width: 0;
   color: #718076;
-  font-size: 11px;
+  font-size: 9px;
 }
 .match-steps li > span:last-child {
   display: flex;
   align-items: center;
   gap: 5px;
   white-space: nowrap;
-}
-.match-steps b {
-  display: none;
 }
 .step-bar {
   height: 4px;
@@ -908,29 +846,6 @@ footer a {
     transform: translateX(350%);
   }
 }
-.below-game {
-  justify-content: flex-end;
-}
-@media (max-width: 600px) {
-  .match-workflow {
-    padding: 12px 12px 0;
-    margin-bottom: 12px;
-  }
-  .match-steps {
-    gap: 5px;
-  }
-  .match-steps li {
-    font-size: 10px;
-  }
-  .match-steps li:nth-child(n + 3):nth-child(-n + 7) > span:last-child {
-    font-size: 0;
-  }
-  .match-steps li:nth-child(n + 3):nth-child(-n + 7) b {
-    font-size: 11px;
-    display: inline;
-    font-weight: 500;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .active .step-bar::after {
     animation: none;
@@ -941,21 +856,33 @@ footer a {
 
 .game-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
   align-items: start;
 }
 .play-column {
   min-width: 0;
 }
-.match-workflow {
-  padding-bottom: 10px;
+.workflow-column {
+  height: var(--game-height);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.workflow-column > .match-workflow {
+  flex-shrink: 0;
 }
 .execution-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fff9;
-  overflow: hidden;
+  overflow: auto;
+  scrollbar-width: thin;
   min-width: 0;
 }
 .execution-heading {
@@ -987,8 +914,12 @@ footer a {
   min-height: 28px;
   border-bottom: 1px solid var(--line);
 }
+.execution-panel > :not(.execution-runs) {
+  flex-shrink: 0;
+}
 .execution-runs {
-  max-height: 465px;
+  flex: 1;
+  min-height: 140px;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -1136,15 +1067,12 @@ footer a {
   word-break: break-word;
 }
 @media (min-width: 1001px) {
-  .game-layout .stage {
-    height: 445px;
-  }
   .game-layout .turn-status {
     font-size: 12px;
   }
   .game-layout .game-controls {
-    gap: 12px;
-    padding: 16px;
+    gap: 20px;
+    padding: 12px 24px;
   }
   .game-layout .shot-markers {
     gap: 5px;
@@ -1159,14 +1087,67 @@ footer a {
   .game-layout {
     grid-template-columns: 1fr;
   }
+  .app {
+    --game-height: clamp(500px, calc(100svh - 118px), 640px);
+  }
+  .workflow-column {
+    height: auto;
+    margin-bottom: 18px;
+  }
   .execution-runs {
+    flex: auto;
     max-height: 360px;
+  }
+  .game-layout {
+    gap: 8px;
+  }
+  .game-extras {
+    min-height: 36px;
   }
   .execution-empty {
     padding: 20px;
   }
   .execution-empty p {
     margin: 8px 0;
+  }
+}
+
+@media (max-width: 1000px) and (max-height: 500px) and (orientation: landscape) {
+  .app {
+    --game-height: max(290px, calc(100dvh - 64px));
+    padding: 0 12px;
+  }
+  header {
+    height: 48px;
+  }
+  main {
+    padding-top: 8px;
+  }
+  .scoreboard {
+    height: 40px;
+  }
+  .game-controls {
+    min-height: 64px;
+    padding: 6px 16px;
+  }
+  .shot-markers > span {
+    width: 22px;
+    height: 22px;
+  }
+  .start-overlay {
+    padding-bottom: 12px;
+  }
+  .start-overlay form {
+    padding: 10px 14px;
+  }
+  .start-overlay form > span {
+    display: none;
+  }
+  .stage-top {
+    top: 10px;
+  }
+  .aim-hint {
+    bottom: 10px;
   }
 }
 
@@ -1262,6 +1243,7 @@ footer a {
   }
 }
 .game .keeper-controls {
+  flex-shrink: 0;
   margin: 0;
   padding: 10px 16px;
   border-top: 1px solid #3b5148;
