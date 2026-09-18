@@ -4,8 +4,9 @@ import {
   useThree,
   type ThreeEvent,
 } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import Footballer from "./Footballer";
 import type { Aim, Shot } from "../../shared/types";
 
 type Props = {
@@ -17,186 +18,6 @@ type Props = {
   onComplete: () => void;
   reducedMotion: boolean;
 };
-function Capsule({
-  position = [0, 0, 0],
-  radius = 0.1,
-  length = 0.4,
-  color,
-  ...rest
-}: any) {
-  return (
-    <mesh position={position} castShadow {...rest}>
-      <capsuleGeometry args={[radius, length, 4, 10]} />
-      <meshStandardMaterial color={color} roughness={0.85} />
-    </mesh>
-  );
-}
-function Boot({ x = 0 }: { x?: number }) {
-  return (
-    <mesh position={[x, -0.43, -0.1]} castShadow>
-      <boxGeometry args={[0.17, 0.12, 0.32]} />
-      <meshStandardMaterial color="#15201e" />
-    </mesh>
-  );
-}
-function Footballer({
-  keeper = false,
-  shot,
-  reducedMotion,
-}: {
-  keeper?: boolean;
-  shot: Shot | null;
-  reducedMotion: boolean;
-}) {
-  const body = useRef<THREE.Group>(null),
-    leftArm = useRef<THREE.Group>(null),
-    rightArm = useRef<THREE.Group>(null),
-    leftLeg = useRef<THREE.Group>(null),
-    rightLeg = useRef<THREE.Group>(null);
-  const start = useRef(0);
-  useEffect(() => {
-    start.current = performance.now();
-  }, [shot]);
-  useFrame(({ clock }) => {
-    if (!body.current) return;
-    const t = shot
-      ? Math.min(1, (performance.now() - start.current) / 1100)
-      : 0;
-    const dive =
-      keeper && shot && shot.outcome !== "wide"
-        ? Math.min(1, Math.max(0, (t - 0.14) / 0.6))
-        : 0;
-    const x = shot?.keeper?.x || 0,
-      y = shot?.keeper?.y || 0.4;
-    body.current.position.set(
-      keeper ? x * 3.66 * dive : -0.68,
-      keeper
-        ? 0.03 + Math.sin(dive * Math.PI) * 0.4 + Math.max(0, y - 0.4) * dive
-        : 0,
-      keeper ? -5.72 : 5.35 - Math.sin(Math.min(1, t * 2) * Math.PI) * 0.5,
-    );
-    body.current.rotation.z = keeper ? -Math.sign(x) * dive * 1.07 : 0;
-    body.current.rotation.y = keeper ? 0 : Math.PI;
-    if (!shot && !reducedMotion)
-      body.current.position.y = Math.sin(clock.elapsedTime * 2) * 0.018;
-    if (leftArm.current)
-      leftArm.current.rotation.z = keeper ? 0.35 + dive * 0.65 : 0.12;
-    if (rightArm.current)
-      rightArm.current.rotation.z = keeper ? -0.35 - dive * 0.65 : -0.12;
-    if (leftLeg.current) leftLeg.current.rotation.x = keeper ? -0.1 : 0;
-    if (rightLeg.current)
-      rightLeg.current.rotation.x = keeper
-        ? -0.1
-        : shot
-          ? Math.sin(Math.min(1, t * 3.5) * Math.PI) * -1.1
-          : 0;
-  });
-  const kit = keeper ? "#965dff" : "#f1eee4",
-    shorts = keeper ? "#50268a" : "#213b37",
-    skin = keeper ? "#be8b66" : "#bd8663";
-  return (
-    <group ref={body}>
-      <Capsule
-        position={[0, 1.08, 0]}
-        radius={0.23}
-        length={0.36}
-        color={kit}
-        scale={[1, 0.95, 0.73]}
-      />
-      <mesh position={[0, 0.72, 0]} castShadow>
-        <boxGeometry args={[0.43, 0.24, 0.29]} />
-        <meshStandardMaterial color={shorts} />
-      </mesh>
-      <Capsule
-        position={[0, 1.45, 0]}
-        radius={0.085}
-        length={0.1}
-        color={skin}
-      />
-      <mesh position={[0, 1.66, 0]} castShadow>
-        <sphereGeometry args={[0.185, 16, 12]} />
-        <meshStandardMaterial color={skin} />
-      </mesh>
-      <mesh position={[0, 1.75, -0.01]} castShadow>
-        <sphereGeometry
-          args={[0.188, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.48]}
-        />
-        <meshStandardMaterial color="#242521" />
-      </mesh>
-      {[-1, 1].map((s) => (
-        <mesh key={s} position={[s * 0.065, 1.68, 0.169]}>
-          <sphereGeometry args={[0.014, 8, 8]} />
-          <meshBasicMaterial color="#17231f" />
-        </mesh>
-      ))}
-      <group position={[-0.27, 1.29, 0]} ref={leftArm}>
-        <Capsule
-          position={[0, -0.16, 0]}
-          radius={0.085}
-          length={0.23}
-          color={kit}
-        />
-        <Capsule
-          position={[0, -0.41, 0.04]}
-          radius={0.065}
-          length={0.2}
-          color={skin}
-        />
-        <Capsule
-          position={[0, -0.58, 0.08]}
-          radius={0.08}
-          length={0.04}
-          color={keeper ? "#daf5a4" : skin}
-        />
-      </group>
-      <group position={[0.27, 1.29, 0]} ref={rightArm}>
-        <Capsule
-          position={[0, -0.16, 0]}
-          radius={0.085}
-          length={0.23}
-          color={kit}
-        />
-        <Capsule
-          position={[0, -0.41, 0.04]}
-          radius={0.065}
-          length={0.2}
-          color={skin}
-        />
-        <Capsule
-          position={[0, -0.58, 0.08]}
-          radius={0.08}
-          length={0.04}
-          color={keeper ? "#daf5a4" : skin}
-        />
-      </group>
-      {[-1, 1].map((s, i) => (
-        <group
-          key={s}
-          position={[s * 0.13, 0.68, 0]}
-          ref={i === 0 ? leftLeg : rightLeg}
-        >
-          <Capsule
-            position={[0, -0.14, 0]}
-            radius={0.1}
-            length={0.19}
-            color={skin}
-          />
-          <Capsule
-            position={[0, -0.35, 0]}
-            radius={0.075}
-            length={0.22}
-            color={kit}
-          />
-          <Boot />
-        </group>
-      ))}
-      <mesh position={[0, 1.13, 0.178]}>
-        <planeGeometry args={[0.09, 0.17]} />
-        <meshBasicMaterial color={keeper ? "#eee2ff" : "#203833"} />
-      </mesh>
-    </group>
-  );
-}
 function Net() {
   const geometry = useMemo(() => {
     const points: number[] = [];
@@ -330,7 +151,7 @@ function Ball({
   const ref = useRef<THREE.Group>(null),
     start = useRef(0),
     done = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     start.current = performance.now();
     done.current = false;
   }, [shot]);
@@ -344,17 +165,21 @@ function Ball({
     const elapsed = performance.now() - start.current;
     const t = reducedMotion
       ? 1
-      : Math.min(1, Math.max(0, (elapsed - 180) / 720));
+      : Math.min(1, Math.max(0, (elapsed - 180) / 650));
     const a = shot.aim!;
-    const bounce = shot.outcome === "saved" && t > 0.82 ? (t - 0.82) / 0.18 : 0;
+    const bounce =
+      shot.outcome === "saved" && t === 1
+        ? Math.min(1, Math.max(0, (elapsed - 830) / 290))
+        : 0;
     ref.current.position.set(
       a.x * 3.66 * t,
-      0.14 + (a.y * 2.44 - 0.14) * t + Math.sin(t * Math.PI) * 0.65,
-      4.5 - 10.8 * t + bounce * 1.8,
+      (0.14 + (a.y * 2.44 - 0.14) * t + Math.sin(t * Math.PI) * 0.65) *
+        (1 - bounce * 0.75),
+      4.5 - 10.4 * t + bounce * 1.3,
     );
     ref.current.rotation.x = -t * 12;
     ref.current.rotation.z = t * 5;
-    if (t === 1 && !done.current) {
+    if ((elapsed >= 1120 || reducedMotion) && !done.current) {
       done.current = true;
       onComplete();
     }

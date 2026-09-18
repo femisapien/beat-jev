@@ -3,23 +3,36 @@ from typesafe_sdk import AsyncTypeSafeClient, Choice, RetryPolicy
 from app.game import CONFIG
 
 
-async def decide_keeper(shots):
-    history = [
-        dict(aim=s["aim"], outcome=s["outcome"]) for s in shots if s.get("outcome")
-    ]
-    options = {k: v["label"] for k, v in CONFIG["zones"].items()}
+async def decide_keeper(aim):
+    state = dict(
+        ball=dict(
+            projectedCrossing=aim,
+            horizontal="left"
+            if aim["x"] < -0.31
+            else "right"
+            if aim["x"] > 0.31
+            else "center",
+            height="low" if aim["y"] < 0.505 else "high",
+            path="outside the goal"
+            if abs(aim["x"]) > 0.965 or aim["y"] < 0.035 or aim["y"] > 0.965
+            else "on target",
+        ),
+        coordinates="Shooter view: x=-1 left post, x=0 center, x=1 right post. y=0 grass, y=1 crossbar. The crossing is computed by the game, not inferred from an image.",
+    )
     started = perf_counter()
     async with AsyncTypeSafeClient(
         retry=RetryPolicy(max_retries=0, timeout=10)
     ) as client:
         result = await client.system_one(
-            state=dict(history=history),
+            state=state,
             questions={
-                "defend": Choice(instructions=CONFIG["question"], criteria=options)
+                "defend": Choice(
+                    instructions=CONFIG["question"], criteria=CONFIG["criteria"]
+                )
             },
         )
     answer = result.choices["defend"]
-    if answer.choice not in options:
+    if answer.choice not in CONFIG["criteria"]:
         raise ValueError("Keeper decision unavailable.")
     return dict(
         choice=answer.choice,
@@ -27,5 +40,5 @@ async def decide_keeper(shots):
         confidence=answer.confidence,
         model=result.model,
         durationMs=round((perf_counter() - started) * 1000),
-        history=history,
+        state=state,
     )

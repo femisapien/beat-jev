@@ -80,8 +80,12 @@ app.post("/api/play", async (req, res) => {
       const match = await readMatch(b.matchId, cmd.owner);
       const shot = match.state.shots.find((s) => s.number === b.number);
       if (
-        !shot ||
-        (shot.aim && (shot.aim.x !== b.aim.x || shot.aim.y !== b.aim.y))
+        (!shot &&
+          (!match.state.started ||
+            match.state.finished ||
+            b.number !==
+              match.state.shots.filter((s) => s.outcome).length + 1)) ||
+        (shot?.aim && (shot.aim.x !== b.aim.x || shot.aim.y !== b.aim.y))
       )
         return res
           .status(409)
@@ -90,7 +94,7 @@ app.post("/api/play", async (req, res) => {
       cmd.aim = b.aim;
     }
     const run = await render.workflows.startTask(
-      `${workflow}/${b.action === "start" ? "start_game" : "take_shot"}`,
+      `${workflow}/${b.action === "start" ? "start_game" : "take_penalty"}`,
       [cmd],
     );
     res.status(202).json({ runId: run.taskRunId });

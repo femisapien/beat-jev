@@ -99,12 +99,20 @@ async def play(request: Request):
         shot = next(
             (s for s in match["state"]["shots"] if s["number"] == body.number), None
         )
-        if not shot or (shot.get("aim") and shot["aim"] != aim):
+        if (
+            not shot
+            and (
+                not match["state"].get("started")
+                or match["state"]["finished"]
+                or body.number
+                != sum(bool(s.get("outcome")) for s in match["state"]["shots"]) + 1
+            )
+        ) or (shot and shot.get("aim") and shot["aim"] != aim):
             return JSONResponse({"error": "That penalty is not available."}, 409)
         cmd.update(number=body.number, aim=aim)
     try:
         run = await render.workflows.start_task(
-            f"{WORKFLOW}/{'start_game' if body.action == 'start' else 'take_shot'}",
+            f"{WORKFLOW}/{'start_game' if body.action == 'start' else 'take_penalty'}",
             [cmd],
         )
         return JSONResponse(dict(runId=run.id), 202)

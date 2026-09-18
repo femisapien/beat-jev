@@ -31,7 +31,7 @@ async def read_trace(run_id, owner):
         if (
             root["input"][0].get("owner") != owner
             or root.get("parentTaskRunId")
-            or task["name"] not in ["start_game", "take_shot"]
+            or task["name"] not in ["start_game", "take_penalty"]
         ):
             raise LookupError("Trace not found.")
         if not os.getenv("RENDER_LOCAL_DEV_URL"):
@@ -72,4 +72,9 @@ async def read_trace(run_id, owner):
                     retries=run.get("retries", 0),
                 )
             )
-    return dict(id=run_id, status=root["status"], spans=spans)
+    return dict(
+        id=run_id,
+        status=root["status"],
+        spans=spans,
+        number=root["input"][0].get("number"),
+    )

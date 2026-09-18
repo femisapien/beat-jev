@@ -29,7 +29,7 @@ export async function readTrace(id: string, owner: string): Promise<Trace> {
   if (
     cmd?.owner !== owner ||
     root.parentTaskRunId ||
-    !["start_game", "take_shot"].includes(info.name)
+    !["start_game", "take_penalty"].includes(info.name)
   )
     throw new Error("Trace not found.");
   if (!process.env.RENDER_LOCAL_DEV_URL) {
@@ -59,5 +59,5 @@ export async function readTrace(id: string, owner: string): Promise<Trace> {
       retries: r.retries,
     })),
   );
-  return { id, status: root.status, spans };
+  return { id, status: root.status, spans, number: cmd.number };
 }

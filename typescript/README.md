@@ -13,7 +13,7 @@ Five shots against an AI keeper. **Render Workflows** runs every turn; **TypeSaf
 
 ## Deploy
 
-The Blueprint creates a paid web service, a usage-billed workflow with all five tasks, and a paid Postgres database. Enter your **Render API key** and **TypeSafe API key** when prompted. Database connections and the workflow slug are wired automatically. No OpenRouter key is needed.
+The Blueprint creates a paid web service, a usage-billed workflow with all eight tasks, and a paid Postgres database. Enter your **Render API key** and **TypeSafe API key** when prompted. Database connections and the workflow slug are wired automatically. No OpenRouter key is needed.
 
 ## Play
 
@@ -21,7 +21,7 @@ The Blueprint creates a paid web service, a usage-billed workflow with all five 
 2. Tap the goal to shoot, or use arrow keys and Space.
 3. Take five penalties. Press **Try again** for a new match.
 
-Open **Render Workflows** below the pitch to inspect real task runs and Jev’s decision. The goalkeeper commits before seeing your target.
+The progress strip above the pitch follows your match. The **Render Workflows** panel shows each player and goalkeeper task live; expand Jev’s move for its input and response.
 
 ## Local development
 

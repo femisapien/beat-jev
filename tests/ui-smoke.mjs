@@ -39,6 +39,13 @@ for (const [label, width, height] of [
     path: `work/ui-${label}-initial.png`,
     fullPage: true,
   });
+  const workflowBox = await page
+    .getByRole("region", { name: "Match workflow" })
+    .boundingBox();
+  const pitchBox = await page
+    .getByRole("region", { name: "Penalty shootout", exact: true })
+    .boundingBox();
+  assert.ok(workflowBox.y < pitchBox.y, "Workflow is visible above the pitch");
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await page
     .getByRole("button", { name: "Shoot", exact: true })
@@ -99,14 +106,17 @@ for (const [label, width, height] of [
         await page.getByRole("button", { name: "Shoot", exact: true }).click();
     }
   }
-  await page.getByText("Render Workflows", { exact: true }).click();
+  assert.equal(await page.locator(".match-steps .done").count(), 8);
   await page
     .getByText("Finish match", { exact: true })
     .waitFor({ timeout: 20000 });
+  assert.equal(await page.locator(".execution-run").count(), 6);
+  assert.equal(
+    await page.getByText("Goalkeeper reacts", { exact: true }).count(),
+    5,
+  );
   assert.ok(
-    (await page.locator(".trace-content").innerText()).includes(
-      "Jev’s decision",
-    ),
+    (await page.locator(".execution-panel").innerText()).includes("Jev’s move"),
   );
   assert.equal(
     await page.evaluate(
@@ -114,6 +124,19 @@ for (const [label, width, height] of [
     ),
     false,
   );
+  const runsBefore = await page.locator(".run-id").allTextContents();
+  const scoreBefore = await page.locator(".career").innerText();
+  await page.reload();
+  await page.waitForFunction(
+    () => document.querySelectorAll(".execution-run").length === 6,
+    { timeout: 60000 },
+  );
+  await page
+    .getByRole("button", { name: "Try again", exact: true })
+    .waitFor({ timeout: 60000 });
+  assert.deepEqual(await page.locator(".run-id").allTextContents(), runsBefore);
+  assert.equal(await page.locator(".career").innerText(), scoreBefore);
+  assert.equal(await page.locator(".match-steps .done").count(), 8);
   await page.screenshot({
     path: `work/ui-${label}-complete.png`,
     fullPage: true,
@@ -130,7 +153,7 @@ for (const [label, width, height] of [
   assert.deepEqual(errors, []);
   console.log(
     label,
-    "PASS: real five-shot game, retry, pointer, keyboard, trace, replay, deploy menu, no overflow or JS errors.",
+    "PASS: real five-shot game, retry, pointer, keyboard, trace, refresh recovery, replay, deploy menu, no overflow or JS errors.",
   );
   await page.close();
 }

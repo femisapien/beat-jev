@@ -5,17 +5,18 @@ export type Decision = {
   confidence: number;
   model: string;
   durationMs: number;
-  history: { aim: Aim; outcome: string }[];
+  state: { ball: { projectedCrossing: Aim }; coordinates: string };
 };
 export type Shot = {
   number: number;
-  decision: Decision;
+  decision?: Decision;
   aim?: Aim;
   outcome?: "goal" | "saved" | "wide";
   keeper?: Aim;
+  keeperAction?: "dive" | "hold";
   committedAt?: string;
 };
-export type State = { shots: Shot[]; finished: boolean };
+export type State = { shots: Shot[]; finished: boolean; started?: boolean };
 export type Match = {
   id: string;
   name: string;
@@ -26,6 +27,7 @@ export type Game = {
   id: string;
   name: string;
   shots: Shot[];
+  started: boolean;
   ready: boolean;
   finished: boolean;
   attempts: number;
@@ -48,4 +50,9 @@ export type Span = {
   completedAt?: string;
   retries: number;
 };
-export type Trace = { id: string; status: string; spans: Span[] };
+export type Trace = {
+  id: string;
+  status: string;
+  spans: Span[];
+  number?: number;
+};

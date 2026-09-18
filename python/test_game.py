@@ -1,6 +1,6 @@
 import unittest
 import copy
-from app.game import resolve_shot, record, public_game
+from app.game import resolve_shot, record, submit, public_game, keeper_move
 
 D = dict(
     choice="left_low",
@@ -8,12 +8,12 @@ D = dict(
     confidence=1,
     model="test",
     durationMs=1,
-    history=[],
+    state={"ball": {"projectedCrossing": {"x": -0.62, "y": 0.25}}},
 )
 
 
 def state():
-    return dict(shots=[dict(number=1, decision=copy.deepcopy(D))], finished=False)
+    return dict(shots=[], started=True, finished=False)
 
 
 class GameTests(unittest.TestCase):
@@ -22,7 +22,10 @@ class GameTests(unittest.TestCase):
             resolve_shot(dict(x=-0.62, y=0.25), "left_low")["outcome"], "saved"
         )
         self.assertEqual(
-            resolve_shot(dict(x=0.8, y=0.8), "left_low")["outcome"], "goal"
+            resolve_shot(dict(x=0.92, y=0.92), "right_high")["outcome"], "goal"
+        )
+        self.assertEqual(
+            resolve_shot(dict(x=0, y=0.4), "leave_wide")["outcome"], "goal"
         )
 
     def test_wide_stays(self):
@@ -32,25 +35,33 @@ class GameTests(unittest.TestCase):
                 dict(outcome="wide", keeper=dict(x=0, y=0.4)),
             )
 
-    def test_retry_preserves_shot(self):
+    def test_retry_locks_target(self):
         s = state()
-        a = copy.deepcopy(record(s, 1, dict(x=0.8, y=0.8)))
-        self.assertEqual(record(s, 1, dict(x=0.8, y=0.8)), a)
+        aim = dict(x=0.8, y=0.8)
+        shot = submit(s, 1, aim)
+        self.assertIs(submit(s, 1, aim), shot)
+        with self.assertRaises(ValueError):
+            submit(s, 1, dict(x=0, y=0.3))
+        with self.assertRaises(ValueError):
+            record(s, 1, aim)
+        shot["decision"] = D
+        shot.update(keeper_move(aim, D["choice"]))
+        a = copy.deepcopy(record(s, 1, aim))
+        self.assertEqual(record(s, 1, aim), a)
         self.assertEqual(len(s["shots"]), 1)
 
-    def test_conflicting_retry(self):
+    def test_out_of_order(self):
         s = state()
-        record(s, 1, dict(x=0.8, y=0.8))
         with self.assertRaises(ValueError):
-            record(s, 1, dict(x=0, y=0.5))
-        with self.assertRaises(ValueError):
-            record(s, 2, dict(x=0, y=0.5))
+            submit(s, 2, dict(x=0, y=0.3))
 
-    def test_hidden_future(self):
+    def test_pending_is_hidden(self):
         m = dict(id="test", name="Guest", owner_hash="hidden", state=state())
+        self.assertTrue(public_game(m, dict(attempts=0, goals=0))["ready"])
+        submit(m["state"], 1, dict(x=0.8, y=0.8))
         g = public_game(m, dict(attempts=0, goals=0))
         self.assertEqual(g["shots"], [])
-        self.assertTrue(g["ready"])
+        self.assertFalse(g["ready"])
         self.assertNotIn("owner_hash", g)
 
 

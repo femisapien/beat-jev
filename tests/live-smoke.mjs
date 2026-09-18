@@ -51,7 +51,7 @@ await pause(500);
 assert.equal((await request("/matches/" + matchId)).data.attempts, 0);
 const targets = [
   { x: 1.25, y: 0.5 },
-  { x: 0.84, y: 0.8 },
+  { x: 0.93, y: 0.92 },
   { x: -0.62, y: 0.25 },
   { x: 0.62, y: 0.25 },
   { x: 0, y: 0.76 },
@@ -73,8 +73,12 @@ for (let number = 1; number <= 5; number++) {
     "ms",
   );
   assert.equal(g.shots.length, number);
-  assert.equal(shot.decision.history.length, number - 1);
+  assert.deepEqual(
+    shot.decision.state.ball.projectedCrossing,
+    targets[number - 1],
+  );
   assert.ok(shot.decision.model.startsWith("jev"));
+  if (number === 2) assert.equal(shot.outcome, "goal");
   if (number === 1) {
     assert.equal(shot.outcome, "wide");
     assert.deepEqual(shot.keeper, { x: 0, y: 0.4 });
@@ -119,10 +123,10 @@ for (const id of runs) {
   traces.push(result.data);
 }
 assert.ok(
-  traces.some((t) => t.spans.some((s) => s.name === "prepare_penalty")),
+  traces.some((t) => t.spans.some((s) => s.name === "goalkeeper_action")),
 );
-assert.ok(traces.some((t) => t.spans.some((s) => s.name === "record_shot")));
-assert.ok(traces.some((t) => t.spans.some((s) => s.name === "finish_game")));
+assert.ok(traces.some((t) => t.spans.some((s) => s.name === "record_result")));
+assert.ok(traces.some((t) => t.spans.some((s) => s.name === "finish_match")));
 await mkdir("work", { recursive: true });
 const lang = (await request("/health")).data.language;
 await writeFile(
@@ -131,5 +135,5 @@ await writeFile(
 );
 console.log(
   lang,
-  "PASS: five penalties, retry/concurrency, ownership, hidden decisions, real Jev, and task trace.",
+  "PASS: five penalties, retry/concurrency, ownership, locked targets, real Jev, and task trace.",
 );

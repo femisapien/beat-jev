@@ -28,5 +28,10 @@ export type Play = {
   number?: number;
   aim?: { x: number; y: number };
 };
-export type Session = { matchId: string; runId?: string; command: Play };
-export const sessionKey = "beat-jev-" + language;
+export type Session = {
+  matchId: string;
+  runId?: string;
+  runIds?: string[];
+  command: Play;
+};
+export const sessionKey = "beat-jev-v2-" + language;

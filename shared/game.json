@@ -1,7 +1,7 @@
 {
   "shots": 5,
-  "rulesVersion": "penalty-v1",
-  "question": "You are the goalkeeper in a five-penalty shootout. Choose the goal zone to defend next using ONLY the completed shot history. Look for repetition, alternation, and changes after saves. You cannot see the next shot. With no history, choose a reasonable opening position. Coordinates and directions are from the shooter's viewpoint. Return one defensive zone.",
+  "rulesVersion": "penalty-v2",
+  "question": "You are the goalkeeper reacting to the CURRENT ball. Which defensive action fits the observed path? The game has already calculated ball.horizontal, ball.height and ball.path from its trajectory. Use those observations, not mental arithmetic. Directions are from the SHOOTER'S viewpoint, exactly as seen on the screen; never mirror left and right. If ball.path is outside the goal, stay upright and leave it. Otherwise defend the observed horizontal lane at the observed height. A corner may still be beyond your reach; attempt the matching defensive move anyway. Do not predict another shot, infer player habits, or choose a different zone for variety.",
   "zones": {
     "left_low": {
       "x": -0.62,
@@ -37,5 +37,14 @@
   "reach": {
     "x": 0.33,
     "y": 0.3
+  },
+  "criteria": {
+    "left_low": "Defend the left of the goal at low height. Use for an on-target ball observed left and low, including corners on that side. Directions are from the shooter's viewpoint.",
+    "left_high": "Defend the left of the goal at high height. Use for an on-target ball observed left and high, including corners on that side. Directions are from the shooter's viewpoint.",
+    "center_low": "Defend the center of the goal at low height. Use for an on-target ball observed center and low, including corners on that side. Directions are from the shooter's viewpoint.",
+    "center_high": "Defend the center of the goal at high height. Use for an on-target ball observed center and high, including corners on that side. Directions are from the shooter's viewpoint.",
+    "right_low": "Defend the right of the goal at low height. Use for an on-target ball observed right and low, including corners on that side. Directions are from the shooter's viewpoint.",
+    "right_high": "Defend the right of the goal at high height. Use for an on-target ball observed right and high, including corners on that side. Directions are from the shooter's viewpoint.",
+    "leave_wide": "Stay upright and let the ball pass. Use only when ball.path says outside the goal, including beside either post, above the crossbar, or below the grass."
   }
 }
