@@ -31,7 +31,7 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
   return data;
 }
 export type Play = {
-  action: "start" | "arm" | "shoot";
+  action: "start" | "shoot" | "ready" | "defend";
   matchId: string;
   name?: string;
   number?: number;
@@ -42,7 +42,6 @@ export type Play = {
 export type Session = {
   matchId: string;
   runId?: string;
-  runIds?: string[];
   command: Play;
 };
-export const sessionKey = "beat-jev-v3-" + language;
+export const sessionKey = "beat-jev-v4-" + language;

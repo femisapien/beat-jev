@@ -20,21 +20,33 @@ async def decide_keeper(aim, path=None, timeout=10):
         ),
         coordinates="Shooter view: x=-1 left post, x=0 center, x=1 right post. y=0 grass, y=1 crossbar. The crossing is computed by the game, not inferred from an image.",
     )
+    return await decide(state, CONFIG["question"], CONFIG["criteria"], timeout)
+
+
+async def decide_shot(history):
+    state = dict(
+        history=[
+            dict(target=s.get("aim"), goalkeeper=s.get("keeper"), outcome=s["outcome"])
+            for s in history
+            if s.get("shooter") == "jev" and s.get("outcome")
+        ],
+        coordinates="Shooter view: x=-1 left post, x=1 right post, y=0 grass, y=1 crossbar. No current goalkeeper position is provided.",
+    )
+    return await decide(state, CONFIG["shootQuestion"], CONFIG["shootCriteria"], 5)
+
+
+async def decide(state, question, criteria, timeout):
     started = perf_counter()
     async with AsyncTypeSafeClient(
         retry=RetryPolicy(max_retries=0, timeout=timeout)
     ) as client:
         result = await client.system_one(
             state=state,
-            questions={
-                "defend": Choice(
-                    instructions=CONFIG["question"], criteria=CONFIG["criteria"]
-                )
-            },
+            questions={"action": Choice(instructions=question, criteria=criteria)},
         )
-    answer = result.choices["defend"]
-    if answer.choice not in CONFIG["criteria"]:
-        raise ValueError("Keeper decision unavailable.")
+    answer = result.choices["action"]
+    if answer.choice not in criteria:
+        raise ValueError("Jev decision unavailable.")
     return dict(
         choice=answer.choice,
         probabilities=answer.probabilities,

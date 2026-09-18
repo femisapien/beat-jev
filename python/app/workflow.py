@@ -1,10 +1,17 @@
 import asyncio
 from datetime import datetime, timezone
 from render import Retry, TaskContext, Workflows
-from app.store import create_match, change_match
-from app.keeper import decide_keeper
+from app.store import create_match, change_match, read_match
+from app.keeper import decide_keeper, decide_shot
 from app.game import record, submit, keeper_move, resolve_shot, CONFIG
-from app.inputs import wait_for_input, read_input, save_reaction
+from app.inputs import (
+    wait_for_input,
+    read_input,
+    save_reaction,
+    prepare_input,
+    save_attack,
+    wait_for_defense,
+)
 
 app = Workflows(
     default_plan="flex",
@@ -56,7 +63,7 @@ async def goalkeeper_action(ctx: TaskContext, cmd: dict):
             (datetime.now(timezone.utc) - slot["released_at"]).total_seconds() * 1000
         )
 
-    shot = dict(number=cmd["number"], aim=aim, path=path)
+    shot = dict(number=cmd["number"], shooter="player", aim=aim, path=path)
     remaining = CONFIG["reactionWindowMs"] - elapsed()
     try:
         if remaining <= 0:
@@ -92,36 +99,112 @@ async def record_result(ctx: TaskContext, cmd: dict):
 
 
 @app.task
+async def prepare_turn(ctx: TaskContext, cmd: dict):
+    slot = await prepare_input(cmd["matchId"], cmd["number"])
+    return dict(**cmd, inputId=str(slot["id"]))
+
+
+@app.task
+async def jev_kick(ctx: TaskContext, cmd: dict):
+    attack = (await read_input(cmd["matchId"], cmd["number"]))["attack"]
+    if not attack:
+        match = await read_match(cmd["matchId"], cmd["owner"])
+        decision = await decide_shot(match["state"]["shots"])
+        zone = CONFIG["zones"][decision["choice"]]
+        aim = dict(x=zone["x"], y=zone["y"])
+        attack = await save_attack(
+            cmd["inputId"],
+            dict(
+                number=cmd["number"],
+                shooter="jev",
+                aim=aim,
+                decision=decision,
+                path=[
+                    dict(x=0, y=0.06),
+                    dict(x=aim["x"] / 2, y=(aim["y"] + 0.06) / 2 + 0.3),
+                    aim,
+                ],
+            ),
+        )
+    slot = await wait_for_input(cmd, "player")
+    if not slot:
+        return None
+
+    def accept(m):
+        shot = submit(m["state"], cmd["number"], attack["aim"])
+        shot.update(attack)
+        return shot
+
+    return await change_match(cmd["matchId"], cmd["owner"], accept)
+
+
+@app.task
+async def player_save(ctx: TaskContext, cmd: dict):
+    slot = await wait_for_input(cmd, "keeper")
+    if not slot:
+        return None
+    if slot["reaction"]:
+        return slot["reaction"]
+    inputs = await wait_for_defense(cmd)
+    keeper = inputs["defense"] or dict(x=0, y=0.25)
+    shot = dict(
+        **inputs["attack"],
+        keeperAction="dive" if inputs["defense"] else "hold",
+        reaction="ready" if inputs["defense"] else "late",
+    )
+    shot.update(
+        resolve_shot(
+            shot["aim"], "human" if inputs["defense"] else "leave_wide", keeper
+        )
+    )
+    return await save_reaction(cmd["inputId"], shot)
+
+
+@app.task
 async def finish_match(ctx: TaskContext, cmd: dict):
     def finish(m):
-        shots = m["state"]["shots"]
-        if sum(bool(s.get("outcome")) for s in shots) != 5:
-            raise ValueError("Match is not complete.")
-        m["state"]["finished"] = True
-        return dict(goals=sum(s.get("outcome") == "goal" for s in shots), attempts=5)
+        shots = [s for s in m["state"]["shots"] if s.get("outcome")]
+        m["state"]["finished"] = len(shots) == CONFIG["shots"] * 2
+        m["state"]["abandoned"] = not m["state"]["finished"]
+        return dict(
+            goals=sum(
+                s.get("shooter") != "jev" and s["outcome"] == "goal" for s in shots
+            ),
+            jevGoals=sum(
+                s.get("shooter") == "jev" and s["outcome"] == "goal" for s in shots
+            ),
+            abandoned=m["state"]["abandoned"],
+        )
 
     return await change_match(cmd["matchId"], cmd["owner"], finish)
 
 
 @app.task(retry=Retry(max_retries=0, wait_duration_ms=500), timeout_seconds=180)
-async def start_game(ctx: TaskContext, cmd: dict):
+async def take_penalty(ctx: TaskContext, cmd: dict):
+    inputs = await ctx.run(prepare_turn, cmd)
+    if cmd["number"] % 2:
+        kick, keeper = await asyncio.gather(
+            ctx.run(player_kick, inputs), ctx.run(goalkeeper_action, inputs)
+        )
+    else:
+        kick, keeper = await asyncio.gather(
+            ctx.run(jev_kick, inputs), ctx.run(player_save, inputs)
+        )
+    if kick is None or keeper is None:
+        return dict(expired=True)
+    await ctx.run(record_result, cmd)
+    return dict(expired=False)
+
+
+@app.task(retry=Retry(max_retries=0, wait_duration_ms=500), timeout_seconds=1200)
+async def run_game(ctx: TaskContext, cmd: dict):
     await ctx.run(register_player, cmd)
     await ctx.run(begin_match, cmd)
-    return dict(matchId=cmd["matchId"])
-
-
-@app.task(retry=Retry(max_retries=0, wait_duration_ms=500), timeout_seconds=180)
-async def take_penalty(ctx: TaskContext, cmd: dict):
-    # Both tasks are running before the player releases the shot.
-    kick, keeper = await asyncio.gather(
-        ctx.run(player_kick, cmd), ctx.run(goalkeeper_action, cmd)
-    )
-    if kick is None or keeper is None:
-        return dict(number=cmd["number"], expired=True)
-    shot = await ctx.run(record_result, cmd)
-    if cmd["number"] == 5:
-        await ctx.run(finish_match, cmd)
-    return dict(number=cmd["number"], outcome=shot["outcome"])
+    for number in range(1, CONFIG["shots"] * 2 + 1):
+        turn = await ctx.run(take_penalty, dict(**cmd, number=number))
+        if turn["expired"]:
+            break
+    return await ctx.run(finish_match, cmd)
 
 
 if __name__ == "__main__":

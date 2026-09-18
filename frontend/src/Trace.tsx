@@ -3,6 +3,9 @@ import { Check, LoaderCircle, Circle, X } from "lucide-react";
 import type { Trace as TraceData, Shot, Span, Turn } from "../../shared/types";
 import config from "../../shared/game.json";
 const labels: Record<string, string> = {
+  prepare_turn: "Prepare turn",
+  jev_kick: "Jev’s kick",
+  player_save: "Your save",
   register_player: "Register player",
   begin_match: "Start match",
   player_kick: "Player input",
@@ -60,14 +63,12 @@ function TaskRow({
 }
 export default function Trace({
   trace,
-  history,
   shot,
   waiting,
   turn,
   released,
 }: {
   trace: TraceData | null;
-  history: TraceData[];
   shot?: Shot;
   waiting?: boolean;
   turn?: Turn;
@@ -75,19 +76,43 @@ export default function Trace({
 }) {
   const [now, setNow] = useState(Date.now());
   const list = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    list.current?.scrollTo({ top: list.current.scrollHeight });
-  }, [history.length, trace?.spans.length]);
   const running = waiting || (!!trace && !terminal(trace.status));
   useEffect(() => {
     if (!running) return;
     const id = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(id);
   }, [running]);
-  const active = trace?.spans.filter(
-    (s) => s.id !== trace.id && !terminal(s.status),
+  useEffect(() => {
+    const panel = list.current,
+      item = panel?.querySelector(".current-turn");
+    if (panel && item) {
+      const p = panel.getBoundingClientRect(),
+        r = item.getBoundingClientRect();
+      if (r.bottom > p.bottom || r.top < p.top)
+        panel.scrollTo({
+          top: panel.scrollTop + r.top - p.top,
+          behavior: "smooth",
+        });
+    }
+  }, [turn?.number, trace?.spans.length]);
+  const spans = trace?.spans || [];
+  const active = spans.filter(
+    (s) =>
+      !["run_game", "take_penalty"].includes(s.name) && !terminal(s.status),
   );
   const choice = shot?.decision?.choice;
+  const row = (s: Span) => (
+    <TaskRow
+      key={s.id}
+      span={s}
+      now={now}
+      waiting={
+        turn?.number === s.number &&
+        !turn?.submitted &&
+        ["player_kick", "goalkeeper_action", "player_save"].includes(s.name)
+      }
+    />
+  );
   return (
     <aside className="execution-panel" aria-label="Render workflow execution">
       <div className="execution-heading">
@@ -98,88 +123,95 @@ export default function Trace({
       <div className="execution-status" aria-live="polite">
         {turn?.ready
           ? released
-            ? "Sending shot to tasks…"
-            : "Player and keeper ready · parallel"
-          : active && active.length > 1
+            ? "Sending your shot…"
+            : `Ready · ${turn.shooter === "jev" ? "you’re in goal" : "your kick"}`
+          : active.length > 1
             ? `${active.length} tasks running in parallel`
-            : active?.length
+            : active.length
               ? `${labels[active[0].name] || active[0].name}…`
-              : running
-                ? "Waiting for Render…"
-                : trace?.status === "completed"
-                  ? "Run complete"
-                  : trace
-                    ? "Needs retry"
-                    : "Ready when you are"}
+              : trace?.status === "completed"
+                ? "Match run complete"
+                : running
+                  ? "Starting match…"
+                  : "One match. One task tree."}
       </div>
+      {trace && (
+        <details className="match-run-id">
+          <summary>Match run · {trace.status}</summary>
+          <code>{trace.id}</code>
+        </details>
+      )}
       <div className="execution-runs" ref={list}>
-        {!history.length ? (
+        {!trace ? (
           <div className="execution-empty">
             <Circle size={20} />
-            <p>
-              Enter your name and play.
-              <br />
-              The tasks will appear here.
-            </p>
+            <p>The match and its tasks appear here.</p>
           </div>
         ) : (
-          history.map((t) => {
-            const root = t.spans.find((s) => s.id === t.id);
-            const children = t.spans
-              .filter((s) => s.id !== t.id)
-              .sort(
-                (a, b) =>
-                  (Date.parse(a.startedAt || "") || Infinity) -
-                  (Date.parse(b.startedAt || "") || Infinity),
-              );
-            const title =
-              root?.name === "start_game"
-                ? "Kickoff"
-                : `Penalty ${t.number || ""}`;
-            return (
-              <section
-                className="execution-run"
-                key={t.id}
-                aria-label={`${title} workflow`}
-              >
-                <div className="run-title">
-                  <b>{title}</b>
-                  <span title={`Render status: ${t.status}`}>
-                    {t.status === "paused" ? "Awaiting tasks" : t.status}
-                  </span>
-                </div>
+          <>
+            <section className="execution-run">
+              <div className="run-title">
+                <b>Kickoff</b>
+              </div>
+              <ol>
+                {spans
+                  .filter((s) =>
+                    ["register_player", "begin_match"].includes(s.name),
+                  )
+                  .map(row)}
+              </ol>
+            </section>
+            {spans
+              .filter((s) => s.name === "take_penalty")
+              .sort((a, b) => a.number! - b.number!)
+              .map((parent) => {
+                const current = parent.number === turn?.number;
+                const children = spans
+                  .filter((s) => s.parentId === parent.id)
+                  .sort(
+                    (a, b) =>
+                      (Date.parse(a.startedAt || "") || Infinity) -
+                      (Date.parse(b.startedAt || "") || Infinity),
+                  );
+                return (
+                  <details
+                    key={parent.id}
+                    className={`execution-run ${current ? "current-turn" : ""}`}
+                    open={current || !terminal(parent.status)}
+                  >
+                    <summary className="run-title">
+                      <b>
+                        Round {Math.ceil(parent.number! / 2)} ·{" "}
+                        {parent.number! % 2 ? "Your kick" : "Jev’s kick"}
+                      </b>
+                      <span>
+                        {parent.status === "paused" ? "Running" : parent.status}
+                      </span>
+                    </summary>
+                    <ol>{children.map(row)}</ol>
+                    <details className="run-id">
+                      <summary>Task IDs</summary>
+                      <code>{parent.id}</code>
+                      {children.map((s) => (
+                        <code key={s.id}>
+                          {s.name}: {s.id}
+                        </code>
+                      ))}
+                    </details>
+                  </details>
+                );
+              })}
+            {spans.some((s) => s.name === "finish_match") && (
+              <section className="execution-run">
                 <ol>
-                  {children.map((s) => (
-                    <TaskRow
-                      key={s.id}
-                      span={s}
-                      now={now}
-                      waiting={
-                        t.id === trace?.id &&
-                        turn?.number === t.number &&
-                        !turn?.submitted
-                      }
-                    />
-                  ))}
+                  {spans.filter((s) => s.name === "finish_match").map(row)}
                 </ol>
-                {!children.length && (
-                  <p className="task-wait">Waiting for the first task…</p>
-                )}
-                <details className="run-id">
-                  <summary>Run ID</summary>
-                  <code>{t.id}</code>
-                  {children.map((s) => (
-                    <code key={s.id}>
-                      {s.name}: {s.id}
-                    </code>
-                  ))}
-                </details>
               </section>
-            );
-          })
+            )}
+          </>
         )}
       </div>
-      {shot?.reaction && (
+      {shot?.reaction && shot.shooter !== "jev" && (
         <div className="reaction-window">
           <span>
             Jev{" "}
@@ -198,7 +230,7 @@ export default function Trace({
         <details className="keeper-decision">
           <summary>
             <span>
-              Jev’s move{" "}
+              {shot.shooter === "jev" ? "Jev’s shot" : "Jev’s save"}{" "}
               <b>
                 {choice === "leave_wide"
                   ? "Leave it"
@@ -232,8 +264,14 @@ export default function Trace({
             <pre>
               {JSON.stringify(
                 {
-                  question: config.question,
-                  criteria: config.criteria,
+                  question:
+                    shot.shooter === "jev"
+                      ? config.shootQuestion
+                      : config.question,
+                  criteria:
+                    shot.shooter === "jev"
+                      ? config.shootCriteria
+                      : config.criteria,
                   ...shot.decision,
                 },
                 null,

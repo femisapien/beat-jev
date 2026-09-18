@@ -1,10 +1,10 @@
 import express from "express";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { migrate, readMatch, totals } from "./store";
+import { migrate, readMatch, totals, startRun } from "./store";
 import { publicGame } from "./game";
 import { readTrace, render, workflow } from "./runs";
-import { prepareInput, releaseInput, readInput, publicTurn } from "./inputs";
+import { releaseInput, readInput, publicTurn, saveDefense } from "./inputs";
 const app = express();
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "4kb" }));
@@ -46,7 +46,7 @@ app.post("/api/play", async (req, res) => {
     if (
       !b ||
       !uuid.test(b.matchId) ||
-      !["start", "arm", "shoot"].includes(b.action) ||
+      !["start", "shoot", "ready", "defend"].includes(b.action) ||
       Object.keys(b).some(
         (k) =>
           ![
@@ -73,7 +73,7 @@ app.post("/api/play", async (req, res) => {
           .json({ error: "Use a name between 1 and 24 characters." });
       cmd.name = b.name.trim();
     } else {
-      if (!Number.isInteger(b.number) || b.number < 1 || b.number > 5)
+      if (!Number.isInteger(b.number) || b.number < 1 || b.number > 10)
         return res.status(400).json({ error: "Invalid penalty." });
       const match = await readMatch(b.matchId, cmd.owner);
       const existing = match.state.shots.find((s) => s.number === b.number);
@@ -81,17 +81,42 @@ app.post("/api/play", async (req, res) => {
         !existing &&
         (!match.state.started ||
           match.state.finished ||
+          match.state.abandoned ||
           b.number !== match.state.shots.filter((s) => s.outcome).length + 1)
       )
         return res
           .status(409)
           .json({ error: "That penalty is not available." });
       cmd.number = b.number;
-      if (b.action === "arm") {
-        if (existing?.outcome)
-          return res.status(409).json({ error: "Penalty already finished." });
-        cmd.inputId = (await prepareInput(b.matchId, b.number)).id;
+      if (b.action === "ready") {
+        if (b.number % 2)
+          return res.status(409).json({ error: "It is your turn to shoot." });
+        const slot = await readInput(b.matchId, b.number);
+        if (!slot?.attack)
+          return res.status(409).json({ error: "Jev is still choosing." });
+        await releaseInput(b.matchId, b.number, {
+          aim: slot.attack.aim,
+          path: slot.attack.path,
+        });
+        return res.status(202).json({ attack: slot.attack });
+      } else if (b.action === "defend") {
+        if (
+          b.number % 2 ||
+          !b.aim ||
+          ![b.aim.x, b.aim.y].every(Number.isFinite) ||
+          Math.abs(b.aim.x) > 0.9 ||
+          ![0.25, 0.76].includes(b.aim.y)
+        )
+          return res.status(400).json({ error: "Invalid keeper position." });
+        try {
+          await saveDefense(b.matchId, b.number, { x: b.aim.x, y: b.aim.y });
+        } catch (e) {
+          return res.status(409).json({ error: (e as Error).message });
+        }
+        return res.status(202).json({ saved: true });
       } else {
+        if (b.number % 2 === 0)
+          return res.status(409).json({ error: "It is Jev's turn to shoot." });
         const point = (p: any, x: number, y: number) =>
           p &&
           Object.keys(p).sort().join() === "x,y" &&
@@ -123,11 +148,13 @@ app.post("/api/play", async (req, res) => {
         }
       }
     }
-    const run = await render.workflows.startTask(
-      `${workflow}/${b.action === "start" ? "start_game" : "take_penalty"}`,
-      [cmd],
-    );
-    res.status(202).json({ runId: run.taskRunId });
+    const runId = await startRun(b.matchId, cmd.owner, async () => {
+      const run = await render.workflows.startTask(`${workflow}/run_game`, [
+        cmd,
+      ]);
+      return run.taskRunId;
+    });
+    res.status(202).json({ runId });
   } catch (e) {
     res
       .status(503)
@@ -147,6 +174,10 @@ app.get("/api/matches/:id", async (req, res) => {
       ...publicGame(match, counts),
       turn: publicTurn(slot),
       activeShot: slot?.reaction || undefined,
+      incomingShot:
+        slot?.released_at && slot.attack
+          ? { ...slot.attack, releasedAt: new Date(slot.released_at).getTime() }
+          : undefined,
       serverNow: Date.now(),
     });
   } catch {

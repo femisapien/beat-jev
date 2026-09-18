@@ -93,3 +93,28 @@ test("a late correct decision cannot save", () => {
   );
   assert.equal(record(s, 1, aim).outcome, "goal");
 });
+
+test("alternating sides retain independent scores and ten ordered turns", () => {
+  const s = state();
+  for (let number = 1; number <= 10; number++) {
+    const aim = { x: -0.62, y: 0.25 };
+    const shot = submit(s, number, aim);
+    assert.equal(shot.shooter, number % 2 ? "player" : "jev");
+    Object.assign(shot, {
+      decision,
+      reaction: "ready",
+      keeperAction: "dive",
+      keeper: number % 2 ? { x: 0.62, y: 0.25 } : aim,
+    });
+    record(s, number, aim);
+  }
+  const g = publicGame(
+    { id: "test", name: "Guest", owner_hash: "hidden", state: s },
+    { attempts: 5, goals: 5 },
+  );
+  assert.equal(g.goals, 5);
+  assert.equal(g.jevGoals, 0);
+  assert.equal(g.attempts, 10);
+  assert.equal(g.ready, false);
+  assert.throws(() => submit(s, 11, { x: 0, y: 0.25 }), /order/);
+});

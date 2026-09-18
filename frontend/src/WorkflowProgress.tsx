@@ -22,18 +22,17 @@ export default function WorkflowProgress({
       active: !!session && registered && !began,
     },
     ...Array.from({ length: 5 }, (_, i) => ({
-      label: `Penalty ${i + 1}`,
-      done: (game?.attempts || 0) > i,
+      label: `Round ${i + 1}`,
+      done: (game?.attempts || 0) >= (i + 1) * 2,
       active:
-        session?.command.action === "shoot" &&
-        !!session &&
-        session.command.number === i + 1 &&
-        (game?.attempts || 0) <= i,
+        !!game?.turn &&
+        Math.ceil(game.turn.number / 2) === i + 1 &&
+        (game.attempts || 0) < (i + 1) * 2,
     })),
     {
       label: "Full time",
       done: !!game?.finished,
-      active: game?.attempts === 5 && !game.finished,
+      active: game?.attempts === 10 && !game.finished,
     },
   ];
   return (

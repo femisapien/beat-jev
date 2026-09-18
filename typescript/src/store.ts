@@ -56,8 +56,42 @@ export async function changeMatch<T>(
 }
 export async function totals(owner: string) {
   const { rows } = await pool.query(
-    `SELECT count(*)::int AS attempts, count(*) FILTER (WHERE shot->>'outcome'='goal')::int AS goals FROM matches, jsonb_array_elements(state->'shots') shot WHERE owner_hash=$1 AND shot ? 'outcome'`,
+    `SELECT count(*)::int AS attempts, count(*) FILTER (WHERE shot->>'outcome'='goal')::int AS goals FROM matches, jsonb_array_elements(state->'shots') shot WHERE owner_hash=$1 AND shot ? 'outcome' AND COALESCE(shot->>'shooter','player')='player'`,
     [owner],
   );
   return rows[0];
+}
+
+// Serialize repeat clicks and reuse the root run when the response is retried.
+export async function startRun(
+  id: string,
+  owner: string,
+  start: () => Promise<string>,
+) {
+  const c = await pool.connect();
+  try {
+    await c.query("BEGIN");
+    await c.query(
+      "INSERT INTO match_runs(match_id,owner_hash) VALUES($1,$2) ON CONFLICT DO NOTHING",
+      [id, owner],
+    );
+    const row = (
+      await c.query("SELECT * FROM match_runs WHERE match_id=$1 FOR UPDATE", [
+        id,
+      ])
+    ).rows[0];
+    if (row.owner_hash !== owner) throw new Error("Match not found.");
+    const runId = row.run_id || (await start());
+    await c.query("UPDATE match_runs SET run_id=$2 WHERE match_id=$1", [
+      id,
+      runId,
+    ]);
+    await c.query("COMMIT");
+    return runId as string;
+  } catch (e) {
+    await c.query("ROLLBACK");
+    throw e;
+  } finally {
+    c.release();
+  }
 }

@@ -15,6 +15,8 @@ type Props = {
   flight: Playback | null;
   onComplete: () => void;
   reducedMotion: boolean;
+  defending: boolean;
+  humanKeeper: Aim;
 };
 function Net() {
   const geometry = useMemo(() => {
@@ -263,9 +265,15 @@ function Scene(props: Props) {
       />
       <directionalLight position={[6, 6, -9]} color="#c1b2fd" intensity={1.4} />
       <Pitch />
-      <Footballer flight={props.flight} reducedMotion={props.reducedMotion} />
+      <Footballer
+        human={!props.defending}
+        flight={props.flight}
+        reducedMotion={props.reducedMotion}
+      />
       <Footballer
         keeper
+        human={props.defending}
+        control={props.defending ? props.humanKeeper : undefined}
         flight={props.flight}
         reducedMotion={props.reducedMotion}
       />

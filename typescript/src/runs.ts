@@ -5,6 +5,10 @@ export const workflow =
   process.env.RENDER_WORKFLOW_SLUG || "beat-jev-typescript";
 const metadata = new Map<string, { name: string; workflowId?: string }>();
 let workflowId: string | undefined;
+const completed = new Map<
+  string,
+  Awaited<ReturnType<typeof render.workflows.getTaskRun>>
+>();
 async function api(path: string) {
   const response = await fetch(
     `${process.env.RENDER_LOCAL_DEV_URL || "https://api.render.com"}/v1/${path}`,
@@ -26,28 +30,32 @@ export async function readTrace(id: string, owner: string): Promise<Trace> {
   const root = await render.workflows.getTaskRun(id);
   const cmd = (root.input as Command[])[0];
   const info = await taskInfo(root.taskId);
-  if (
-    cmd?.owner !== owner ||
-    root.parentTaskRunId ||
-    !["start_game", "take_penalty"].includes(info.name)
-  )
+  if (cmd?.owner !== owner || root.parentTaskRunId || info.name !== "run_game")
     throw new Error("Trace not found.");
   if (!process.env.RENDER_LOCAL_DEV_URL) {
     if (!workflowId)
-      workflowId = (
-        await api(`tasks?taskSlug=${workflow}/start_game&limit=1`)
-      )[0]?.task.workflowId;
+      workflowId = (await api(`tasks?taskSlug=${workflow}/run_game&limit=1`))[0]
+        ?.task.workflowId;
     if (!workflowId || info.workflowId !== workflowId)
       throw new Error("Trace not found.");
   }
   const listed = await render.workflows.listTaskRuns({
     rootTaskRunId: [id],
-    limit: 30,
+    limit: 100,
   });
   const children = await Promise.all(
     listed
       .filter((r) => r.taskRun.id !== id && r.taskRun.rootTaskRunId === id)
-      .map((r) => render.workflows.getTaskRun(r.taskRun.id)),
+      .map(async (r) => {
+        const run =
+          completed.get(r.taskRun.id) ||
+          (await render.workflows.getTaskRun(r.taskRun.id));
+        if (["completed", "failed", "canceled"].includes(run.status))
+          completed.set(run.id, run);
+        if (completed.size > 2000)
+          completed.delete(completed.keys().next().value!);
+        return run;
+      }),
   );
   const spans: Span[] = await Promise.all(
     [root, ...children].map(async (r) => ({
@@ -57,6 +65,8 @@ export async function readTrace(id: string, owner: string): Promise<Trace> {
       startedAt: r.startedAt,
       completedAt: r.completedAt,
       retries: r.retries,
+      parentId: r.parentTaskRunId,
+      number: ((r.input as Command[]) || [])[0]?.number,
     })),
   );
   return { id, status: root.status, spans, number: cmd.number };

@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { writeFile, mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
-const base = process.argv[2] || "http://127.0.0.1:3101";
-const token = randomUUID(),
-  other = randomUUID(),
-  matchId = randomUUID(),
-  runs = [];
-const request = async (path, body, auth = token) => {
+const base = process.argv[2] || "http://127.0.0.1:3101",
+  token = randomUUID(),
+  matchId = randomUUID();
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+async function request(path, body, auth = token) {
   const r = await fetch(base + "/api" + path, {
     method: body ? "POST" : "GET",
     headers: {
@@ -16,144 +15,172 @@ const request = async (path, body, auth = token) => {
     body: body ? JSON.stringify(body) : undefined,
   });
   return { status: r.status, data: await r.json() };
-};
-const pause = (ms) => new Promise((r) => setTimeout(r, ms));
-async function waitFor(predicate) {
-  for (let i = 0; i < 120; i++) {
-    const g = await request("/matches/" + matchId);
-    if (g.status === 200 && predicate(g.data)) return g.data;
-    await pause(500);
+}
+async function waitFor(test) {
+  for (let i = 0; i < 160; i++) {
+    const r = await request("/matches/" + matchId);
+    if (r.status === 200 && test(r.data)) return r.data;
+    await pause(200);
   }
-  throw Error("Match timed out.");
+  throw Error("Timed out waiting for match.");
 }
-async function play(body) {
-  const start = Date.now();
-  const r = await request("/play", body);
-  assert.equal(r.status, 202, JSON.stringify(r.data));
-  runs.push(r.data.runId);
-  return { ...r.data, start };
-}
-const startBody = { action: "start", matchId, name: "Smoke test" };
-let run = await play(startBody);
-let g = await waitFor((g) => g.ready);
-console.log("Ready", Date.now() - run.start, "ms");
-assert.deepEqual(g.shots, []);
+const start = { action: "start", matchId, name: "Shootout test" };
+const root = await request("/play", start);
+assert.equal(root.status, 202, JSON.stringify(root.data));
+const again = await Promise.all([
+  request("/play", start),
+  request("/play", start),
+]);
+assert.ok(
+  again.every((r) => r.data.runId === root.data.runId),
+  "Only one root per match, including concurrent retries",
+);
+let g = await waitFor((g) => g.turn?.ready);
 assert.equal(
-  (await request("/matches/" + matchId, undefined, other)).status,
+  (await request("/matches/" + matchId, undefined, randomUUID())).status,
   404,
 );
 assert.equal(
-  (await request("/runs/" + run.runId, undefined, other)).status,
+  (await request("/runs/" + root.data.runId, undefined, randomUUID())).status,
   404,
 );
-await play(startBody);
-await pause(500);
-assert.equal((await request("/matches/" + matchId)).data.attempts, 0);
-const targets = [
-  { x: 1.25, y: 0.5 },
-  { x: 0.93, y: 0.92 },
-  { x: -0.62, y: 0.25 },
-  { x: 0.62, y: 0.25 },
-  { x: 0, y: 0.76 },
-];
-for (let number = 1; number <= 5; number++) {
-  const body = { action: "shoot", matchId, number, aim: targets[number - 1] };
-  run = await play({ action: "arm", matchId, number });
-  await waitFor((g) => g.turn?.number === number && g.turn.ready);
-  run.start = Date.now();
-  assert.equal((await request("/play", body)).status, 202);
-  const reacted = await waitFor((g) => g.activeShot?.number === number);
-  console.log(
-    "Reaction available",
-    Date.now() - run.start,
-    "ms",
-    reacted.activeShot.reaction,
-  );
-  g = await waitFor((g) => g.attempts === number);
-  const shot = g.shots[number - 1];
-  console.log(
-    "Penalty",
-    number,
-    shot.outcome,
-    "recorded",
-    Date.now() - run.start,
-    "ms",
-    "Jev",
-    shot.decision?.durationMs,
-    "ms",
-  );
-  assert.equal(g.shots.length, number);
-  assert.ok(shot.decision, "Jev should respond in the normal live case");
-  assert.deepEqual(
-    shot.decision.state.ball.projectedCrossing,
-    targets[number - 1],
-  );
-  assert.ok(shot.decision.model.startsWith("jev"));
-  if (number === 2) assert.equal(shot.outcome, "goal");
-  if (number === 1) {
-    assert.equal(shot.outcome, "wide");
-    assert.deepEqual(shot.keeper, { x: 0, y: 0.4 });
-  }
-  g = await waitFor((g) => (number === 5 ? g.finished : g.ready));
-  if (number === 2) {
-    const before = JSON.stringify(g.shots);
-    const duplicated = await Promise.all([
-      request("/play", body),
-      request("/play", body),
-    ]);
-    assert.ok(duplicated.every((r) => r.status === 202));
-    await pause(1500);
-    g = (await request("/matches/" + matchId)).data;
-    assert.equal(JSON.stringify(g.shots), before);
-    assert.equal(
-      (await request("/play", { ...body, aim: { x: 0, y: 0.4 } })).status,
-      409,
-    );
-  }
-}
-assert.equal(g.attempts, 5);
-assert.equal(g.ready, false);
-assert.equal(g.finished, true);
-assert.equal(g.totalAttempts, 5);
-assert.equal(
-  (
-    await request("/play", {
+for (let number = 1; number <= 10; number++) {
+  g = await waitFor((g) => g.turn?.number === number && g.turn.ready);
+  assert.equal(g.turn.shooter, number % 2 ? "player" : "jev");
+  assert.ok(!g.incomingShot, "Jev target hidden until ready");
+  let body;
+  if (number % 2) {
+    body = {
       action: "shoot",
       matchId,
-      number: 6,
-      aim: { x: 0, y: 0.5 },
-    })
-  ).status,
-  400,
-);
-await pause(500);
-const traces = [];
-for (const id of runs) {
-  const result = await request("/runs/" + id);
-  assert.equal(result.status, 200);
-  traces.push(result.data);
+      number,
+      aim: number === 1 ? { x: 1.25, y: 0.5 } : { x: -0.62, y: 0.25 },
+    };
+    const started = Date.now();
+    assert.equal((await request("/play", body)).status, 202);
+    g = await waitFor(
+      (g) =>
+        g.activeShot?.number === number ||
+        g.shots.some((s) => s.number === number),
+    );
+    console.log("Reaction", number, Date.now() - started, "ms");
+  } else {
+    if (number === 2)
+      assert.equal(
+        (
+          await request("/play", {
+            action: "shoot",
+            matchId,
+            number,
+            aim: { x: 0, y: 0.25 },
+          })
+        ).status,
+        409,
+      );
+    const released = await request("/play", {
+      action: "ready",
+      matchId,
+      number,
+    });
+    assert.equal(released.status, 202, JSON.stringify(released.data));
+    const shot = released.data.attack;
+    assert.ok(shot.decision.model.startsWith("jev"));
+    assert.equal(shot.decision.state.history.length, number / 2 - 1);
+    assert.ok(!("currentGoalkeeper" in shot.decision.state));
+    if (number === 2) {
+      const duplicate = await request("/play", {
+        action: "ready",
+        matchId,
+        number,
+      });
+      assert.deepEqual(
+        duplicate.data.attack,
+        shot,
+        "Jev target cannot change on retry",
+      );
+    }
+    await pause(1480);
+    const aim =
+      number === 4
+        ? { x: -shot.aim.x, y: shot.aim.y === 0.25 ? 0.76 : 0.25 }
+        : shot.aim;
+    body = { action: "defend", matchId, number, aim };
+    assert.equal((await request("/play", body)).status, 202);
+  }
+  g = await waitFor((g) => g.attempts === number);
+  const shot = g.shots.at(-1);
+  assert.equal(shot.shooter, number % 2 ? "player" : "jev");
+  if (number === 1) assert.equal(shot.outcome, "wide");
+  if (number % 2 === 0)
+    assert.equal(shot.outcome, number === 4 ? "goal" : "saved");
+  if (number <= 2) {
+    const before = JSON.stringify(g.shots);
+    assert.equal((await request("/play", body)).status, 202);
+    assert.equal(
+      (await request("/play", { ...body, aim: { x: 0.1, y: 0.25 } })).status,
+      409,
+    );
+    g = (await request("/matches/" + matchId)).data;
+    assert.equal(JSON.stringify(g.shots), before);
+  }
+  console.log(
+    "Turn",
+    number,
+    shot.shooter,
+    shot.outcome,
+    "score",
+    g.goals,
+    g.jevGoals,
+  );
 }
-assert.ok(
-  traces.some((t) => t.spans.some((s) => s.name === "goalkeeper_action")),
+g = await waitFor((g) => g.finished);
+assert.equal(g.attempts, 10);
+assert.equal(g.totalAttempts, 5);
+assert.equal(g.jevGoals, 1);
+let trace;
+for (let i = 0; i < 40; i++) {
+  trace = (await request("/runs/" + root.data.runId)).data;
+  if (trace.status === "completed") break;
+  await pause(400);
+}
+assert.equal(trace.status, "completed");
+assert.equal(
+  trace.spans.find((s) => s.id === root.data.runId).name,
+  "run_game",
 );
-assert.ok(traces.some((t) => t.spans.some((s) => s.name === "record_result")));
-assert.ok(traces.some((t) => t.spans.some((s) => s.name === "finish_match")));
-for (const trace of traces.filter((t) => t.number)) {
-  const kick = trace.spans.find((s) => s.name === "player_kick"),
-    keeper = trace.spans.find((s) => s.name === "goalkeeper_action");
+const turns = trace.spans
+  .filter((s) => s.name === "take_penalty")
+  .sort((a, b) => a.number - b.number);
+assert.equal(turns.length, 10);
+assert.ok(turns.every((t) => t.parentId === root.data.runId));
+for (let i = 0; i < 10; i++) {
+  const t = turns[i],
+    children = trace.spans.filter((s) => s.parentId === t.id);
+  const kick = children.find(
+    (s) => s.name === (t.number % 2 ? "player_kick" : "jev_kick"),
+  );
+  const keeper = children.find(
+    (s) => s.name === (t.number % 2 ? "goalkeeper_action" : "player_save"),
+  );
+  assert.ok(kick && keeper && children.find((s) => s.name === "record_result"));
   assert.ok(
     Date.parse(kick.startedAt) < Date.parse(keeper.completedAt) &&
       Date.parse(keeper.startedAt) < Date.parse(kick.completedAt),
-    "Kick and keeper tasks overlap on Render",
+    "Parallel children overlap",
   );
+  if (i)
+    assert.ok(
+      Date.parse(t.startedAt) >= Date.parse(turns[i - 1].completedAt),
+      "Turns execute sequentially",
+    );
 }
-await mkdir("work", { recursive: true });
 const lang = (await request("/health")).data.language;
+await mkdir("work", { recursive: true });
 await writeFile(
   `work/live-${lang}.json`,
-  JSON.stringify({ base, matchId, game: g, traces }, null, 2),
+  JSON.stringify({ base, matchId, game: g, trace }, null, 2),
 );
 console.log(
   lang,
-  "PASS: five penalties, retry/concurrency, ownership, locked targets, real Jev, and task trace.",
+  "PASS: one root, ten alternating turns, nested parallel tasks, hidden committed targets, save/goal scoring, retry safety, ownership, completion.",
 );

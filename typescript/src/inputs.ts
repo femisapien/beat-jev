@@ -4,14 +4,12 @@ import config from "../../shared/game.json";
 import type { Aim, Command, Shot } from "../../shared/types";
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function prepareInput(matchId: string, number: number) {
-  const { rows } = await pool.query(
+  await pool.query(
     `INSERT INTO penalty_inputs(match_id,number,id,expires_at)
-    VALUES($1,$2,$3,now()+$4*interval '1 second') ON CONFLICT(match_id,number) DO UPDATE
-    SET id=CASE WHEN penalty_inputs.input IS NULL THEN EXCLUDED.id ELSE penalty_inputs.id END,
-      expires_at=EXCLUDED.expires_at, player_ready=false, keeper_ready=false RETURNING *`,
+    VALUES($1,$2,$3,now()+$4*interval '1 second') ON CONFLICT(match_id,number) DO NOTHING`,
     [matchId, number, randomUUID(), config.readySeconds],
   );
-  return rows[0];
+  return readInput(matchId, number);
 }
 export async function readInput(matchId: string, number?: number) {
   return (
@@ -38,8 +36,7 @@ export async function releaseInput(
     ],
   );
   const row = rows[0];
-  if (!row)
-    throw new Error("The keeper is not ready. Prepare the penalty again.");
+  if (!row) throw new Error("This turn is not ready.");
   const same = (a: Aim[], b: Aim[]) =>
     a.length === b.length &&
     a.every((p, i) => p.x === b[i].x && p.y === b[i].y);
@@ -56,18 +53,50 @@ export async function waitForInput(cmd: Command, actor: "player" | "keeper") {
   while (Date.now() < end) {
     const row = await readInput(cmd.matchId, cmd.number!);
     if (!row || row.id !== cmd.inputId) return null;
-    if (row.input) return row;
+    if (row.input && row.released_at) return row;
     if (Date.now() > new Date(row.expires_at).getTime()) return null;
     await pause(50);
   }
   return null;
 }
 export async function saveReaction(id: string, shot: Shot) {
+  return (
+    await pool.query(
+      "UPDATE penalty_inputs SET reaction=COALESCE(reaction,$2::jsonb) WHERE id=$1 RETURNING reaction",
+      [id, JSON.stringify(shot)],
+    )
+  ).rows[0].reaction as Shot;
+}
+export async function saveAttack(id: string, shot: Shot) {
+  return (
+    await pool.query(
+      "UPDATE penalty_inputs SET attack=COALESCE(attack,$2::jsonb) WHERE id=$1 RETURNING attack",
+      [id, JSON.stringify(shot)],
+    )
+  ).rows[0].attack as Shot;
+}
+export async function saveDefense(
+  matchId: string,
+  number: number,
+  keeper: Aim,
+) {
   const { rows } = await pool.query(
-    "UPDATE penalty_inputs SET reaction=COALESCE(reaction,$2::jsonb) WHERE id=$1 RETURNING reaction",
-    [id, JSON.stringify(shot)],
+    `UPDATE penalty_inputs SET defense=COALESCE(defense,$3::jsonb)
+    WHERE match_id=$1 AND number=$2 AND released_at IS NOT NULL AND (defense IS NOT NULL OR (reaction IS NULL AND now()<released_at+interval '5 seconds')) RETURNING defense`,
+    [matchId, number, JSON.stringify(keeper)],
   );
-  return rows[0].reaction as Shot;
+  if (!rows[0]) throw new Error("The save window has ended.");
+  if (rows[0].defense.x !== keeper.x || rows[0].defense.y !== keeper.y)
+    throw new Error("This save is already committed.");
+}
+export async function waitForDefense(cmd: Command) {
+  for (let i = 0; i < 110; i++) {
+    const row = await readInput(cmd.matchId, cmd.number!);
+    if (row.defense || Date.now() > new Date(row.released_at).getTime() + 5000)
+      return row;
+    await pause(50);
+  }
+  return readInput(cmd.matchId, cmd.number!);
 }
 export function publicTurn(row: any) {
   if (!row) return undefined;
@@ -75,7 +104,13 @@ export function publicTurn(row: any) {
   return {
     id: row.id,
     number: row.number,
-    ready: row.player_ready && row.keeper_ready && !expired && !row.input,
+    shooter: row.number % 2 ? ("player" as const) : ("jev" as const),
+    ready:
+      row.player_ready &&
+      row.keeper_ready &&
+      !expired &&
+      !row.input &&
+      (row.number % 2 === 1 || !!row.attack),
     expired,
     submitted: !!row.input,
   };

@@ -17,11 +17,13 @@ import {
 } from "lucide-react";
 import { language, serverTime } from "./api";
 import useGame from "./useGame";
+import useKeeperControls from "./useKeeperControls";
 import {
   directPath,
   groundAim,
   missLabel,
   endMs,
+  impactMs,
   type Playback,
 } from "./playback";
 import { ProjectLinks, PoweredByRender } from "./ProjectLinks";
@@ -29,7 +31,7 @@ import Panel from "./Panel";
 import WorkflowProgress from "./WorkflowProgress";
 import Trace from "./Trace";
 import { renderLink } from "../../shared/links";
-import type { Aim } from "../../shared/types";
+import type { Aim, Shot } from "../../shared/types";
 const GameScene = lazy(() => import("./GameScene"));
 class SceneBoundary extends Component<
   { children: ReactNode },
@@ -50,7 +52,7 @@ class SceneBoundary extends Component<
   }
 }
 export default function App() {
-  const { session, game, trace, history, error, sending, dispatch } = useGame();
+  const { session, game, trace, error, sending, dispatch } = useGame();
   const [name, setName] = useState(
     localStorage.getItem("beat-jev-name") || "Guest",
   );
@@ -62,33 +64,70 @@ export default function App() {
   const [reducedMotion, setReduced] = useState(
     matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
-  const seen = useRef(0);
+  const seen = useRef(0),
+    startingJev = useRef(false);
+  const [keeperActive, setKeeperActive] = useState(false);
+  const controls = useKeeperControls(keeperActive);
+  const defending = (flight?.number || game?.turn?.number || 1) % 2 === 0;
   useEffect(() => {
     const m = matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReduced(m.matches);
     m.addEventListener("change", update);
     return () => m.removeEventListener("change", update);
   }, []);
+  function incoming(shot: Shot, elapsed = 0) {
+    seen.current = shot.number;
+    setFlight({
+      number: shot.number,
+      shooter: "jev",
+      aim: shot.aim!,
+      path: shot.path!,
+      startedAt: performance.now() - elapsed,
+    });
+    setLanded(false);
+    setKeeperActive(elapsed < impactMs);
+    setView("flight");
+  }
   useEffect(() => {
-    const latest = game?.activeShot || game?.shots.at(-1);
-    if (!latest) return;
-    if (flight && latest.number === flight.number && !flight.reaction) {
-      // The ball clock never resets when the keeper's answer arrives.
+    if (!game) return;
+    const latest = flight
+      ? game.activeShot?.number === flight.number
+        ? game.activeShot
+        : game.shots.find((s) => s.number === flight.number)
+      : game.shots.at(-1);
+    if (flight && latest && !flight.reaction) {
       setFlight((p) =>
         p ? { ...p, reaction: latest, keeperStartedAt: performance.now() } : p,
       );
-    } else if (!flight && latest.number > seen.current) {
+    } else if (!flight && latest && latest.number > seen.current) {
       seen.current = latest.number;
       setFlight({
         number: latest.number,
+        shooter: latest.shooter,
         aim: latest.aim!,
         path: latest.path || directPath(latest.aim!),
         startedAt: performance.now() - endMs,
         reaction: latest,
         keeperStartedAt: performance.now() - 500,
       });
+      if (latest.shooter === "jev") {
+        controls.reset(latest.keeper);
+      }
       setLanded(true);
       setView("result");
+    } else if (
+      !flight &&
+      game.incomingShot &&
+      game.incomingShot.number > seen.current &&
+      !startingJev.current
+    ) {
+      incoming(
+        game.incomingShot,
+        Math.max(
+          0,
+          serverTime() - (game.incomingShot.releasedAt || serverTime()),
+        ),
+      );
     }
   }, [game, flight]);
   useEffect(() => {
@@ -100,6 +139,23 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [flight?.startedAt, view]);
   useEffect(() => {
+    if (!flight || flight.shooter !== "jev" || view !== "flight" || !game)
+      return;
+    const timer = setTimeout(
+      () => {
+        setKeeperActive(false);
+        void dispatch({
+          action: "defend",
+          matchId: game.id,
+          number: flight.number,
+          aim: controls.position.current,
+        });
+      },
+      Math.max(0, impactMs - (performance.now() - flight.startedAt)),
+    );
+    return () => clearTimeout(timer);
+  }, [flight?.startedAt]);
+  useEffect(() => {
     if (landed && flight?.reaction) setView("result");
   }, [landed, flight?.reaction]);
   const shot = flight?.reaction;
@@ -107,6 +163,8 @@ export default function App() {
     !!game?.ready && !!game.turn?.ready && view === "aim" && !sending && !error;
   function start() {
     seen.current = 0;
+    controls.reset();
+    setKeeperActive(false);
     setFlight(null);
     setLanded(false);
     setView("aim");
@@ -118,7 +176,7 @@ export default function App() {
     });
   }
   function shoot(target: Aim, path?: Aim[]) {
-    if (!ready || !game) return;
+    if (!ready || !game || defending) return;
     const a = groundAim(target),
       trajectory = path || directPath(a),
       number = game.attempts + 1;
@@ -128,6 +186,7 @@ export default function App() {
     setView("flight");
     setFlight({
       number,
+      shooter: "player",
       aim: a,
       path: trajectory,
       startedAt: performance.now(),
@@ -141,12 +200,24 @@ export default function App() {
       releasedAt: serverTime(),
     });
   }
+  async function faceJev() {
+    if (!ready || !game) return;
+    startingJev.current = true;
+    const response = await dispatch({
+      action: "ready",
+      matchId: game.id,
+      number: game.attempts + 1,
+    });
+    if (response?.attack) incoming(response.attack);
+    startingJev.current = false;
+  }
   function next() {
+    controls.reset();
     setFlight(null);
     setLanded(false);
     setView("aim");
   }
-  const completed = view === "result" && shot?.number === 5;
+  const completed = view === "result" && shot?.number === 10;
   const visibleShots = (game?.shots || []).filter(
     (s) => !(view === "flight" && s.number === flight?.number),
   );
@@ -156,12 +227,24 @@ export default function App() {
     !visibleShots.some((s) => s.number === shot.number)
   )
     visibleShots.push(shot);
-  const goals = visibleShots.filter((s) => s.outcome === "goal").length;
-  const message =
-    shot?.outcome === "goal"
-      ? "GOAL!"
+  const goals = visibleShots.filter(
+    (s) => s.shooter !== "jev" && s.outcome === "goal",
+  ).length;
+  const jevGoals = visibleShots.filter(
+    (s) => s.shooter === "jev" && s.outcome === "goal",
+  ).length;
+  const winner =
+    goals > jevGoals ? "You win" : goals < jevGoals ? "Jev wins" : "Draw";
+  const message = completed
+    ? winner.toUpperCase()
+    : shot?.outcome === "goal"
+      ? defending
+        ? "JEV SCORES"
+        : "GOAL!"
       : shot?.outcome === "saved"
-        ? "SAVED"
+        ? defending
+          ? "YOU SAVED IT"
+          : "SAVED"
         : missLabel(shot?.aim);
   return (
     <div className="app">
@@ -183,10 +266,10 @@ export default function App() {
       <main>
         <div className="intro">
           <div>
-            <div className="eyebrow">YOU HAVE FIVE SHOTS</div>
+            <div className="eyebrow">FIVE KICKS EACH</div>
             <h1>Can you beat Jev?</h1>
           </div>
-          <p>Pick a corner. Beat the keeper.</p>
+          <p>Take a shot. Then take the gloves.</p>
         </div>
         <WorkflowProgress game={game} session={session} trace={trace} />
         <div className="game-layout">
@@ -200,10 +283,11 @@ export default function App() {
                 </div>
                 <div className="score">
                   <strong>{goals}</strong>
-                  <span>/ 5</span>
+                  <span>:</span>
+                  <strong className="jev-score">{jevGoals}</strong>
                 </div>
                 <div className="keeper-label">
-                  <small>GOALKEEPER</small>
+                  <small>{defending ? "SHOOTING" : "IN GOAL"}</small>
                   <span>
                     Jev
                     <span className="kit-dot purple" />
@@ -214,9 +298,13 @@ export default function App() {
                 className="stage"
                 tabIndex={0}
                 role="group"
-                aria-label="Aim on the pitch. Arrow keys move the target, Space shoots."
+                aria-label={
+                  defending
+                    ? "You are the goalkeeper. Left and Right move, hold Space to jump."
+                    : "Aim on the pitch. Arrow keys move the target, Space shoots."
+                }
                 onKeyDown={(e) => {
-                  if (!ready) return;
+                  if (!ready || defending) return;
                   const delta = 0.12;
                   const targets: Record<string, Aim> = {
                     ArrowLeft: { ...aim, x: Math.max(-1.6, aim.x - delta) },
@@ -247,10 +335,12 @@ export default function App() {
                       aim={aim}
                       onAim={setAim}
                       onShoot={shoot}
-                      ready={ready}
+                      ready={ready && !defending}
                       flight={flight}
                       onComplete={() => setLanded(true)}
                       reducedMotion={reducedMotion}
+                      defending={defending}
+                      humanKeeper={controls.keeper}
                     />
                   </Suspense>
                 </SceneBoundary>
@@ -281,7 +371,7 @@ export default function App() {
                           Play <ArrowRight size={18} />
                         </button>
                       </div>
-                      <span>Five shots. No sign-up.</span>
+                      <span>Five kicks each. No sign-up.</span>
                     </form>
                   </div>
                 )}
@@ -290,67 +380,115 @@ export default function App() {
                     {message}
                   </div>
                 )}
-                {ready && (
+                {(ready || keeperActive) && (
                   <div className="aim-hint">
-                    Tap a spot or draw a path <span>·</span> Release to shoot
+                    {defending
+                      ? "← → Move · Hold Space to jump"
+                      : "Tap a spot or draw a path · Release to shoot"}
                   </div>
                 )}
               </div>
-              <div className="game-controls">
+              {defending && session && (
                 <div
-                  className="shot-markers"
-                  aria-label={`${visibleShots.length} of 5 attempts`}
+                  className="keeper-controls"
+                  aria-label="Goalkeeper controls"
                 >
-                  {Array.from({ length: 5 }, (_, i) => {
-                    const s = visibleShots[i];
-                    return (
-                      <span
-                        key={i}
-                        className={
-                          s?.outcome ||
-                          (i === visibleShots.length && session
-                            ? "current"
-                            : "")
-                        }
-                        aria-label={`Penalty ${i + 1}: ${s?.outcome || "not taken"}`}
-                      >
-                        {s?.outcome === "goal" ? (
-                          <Check size={16} />
-                        ) : s ? (
-                          <X size={16} />
-                        ) : (
-                          i + 1
-                        )}
-                      </span>
-                    );
-                  })}
+                  <span>← → Move · Space Jump</span>
+                  {[
+                    ["left", "←"],
+                    ["jump", "Jump"],
+                    ["right", "→"],
+                  ].map(([key, label]) => (
+                    <button
+                      key={key}
+                      disabled={!keeperActive}
+                      aria-label={`Keeper ${key}`}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        controls.press(key, true);
+                      }}
+                      onPointerUp={() => controls.press(key, false)}
+                      onPointerCancel={() => controls.press(key, false)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="game-controls">
+                <div className="shootout-marks">
+                  {(["player", "jev"] as const).map((side) => (
+                    <div
+                      className="shot-markers"
+                      key={side}
+                      aria-label={`${side === "player" ? "Your" : "Jev's"} kicks`}
+                    >
+                      <small>{side === "player" ? "You" : "Jev"}</small>
+                      {Array.from({ length: 5 }, (_, i) => {
+                        const number = i * 2 + (side === "player" ? 1 : 2),
+                          s = visibleShots.find((s) => s.number === number);
+                        return (
+                          <span
+                            key={number}
+                            className={
+                              s?.outcome ||
+                              (number === (flight?.number || game?.turn?.number)
+                                ? "current"
+                                : "")
+                            }
+                            aria-label={`Kick ${i + 1}: ${s?.outcome || "not taken"}`}
+                          >
+                            {s?.outcome === "goal" ? (
+                              <Check size={14} />
+                            ) : s ? (
+                              <X size={14} />
+                            ) : (
+                              i + 1
+                            )}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
                 <div className="turn-status" aria-live="polite">
                   {!session
                     ? "Step up to the spot."
-                    : completed
-                      ? `${goals} ${goals === 1 ? "goal" : "goals"} from 5 shots.`
-                      : view === "result"
-                        ? shot?.outcome === "goal"
-                          ? shot?.reaction === "late"
-                            ? "Jev was too late."
-                            : shot?.reaction === "unavailable"
-                              ? "Jev could not respond."
-                              : "Past the keeper."
-                          : shot?.outcome === "saved"
-                            ? "Jev read that one."
-                            : shot?.aim && shot.aim.y > 0.965
-                              ? "Over the crossbar."
-                              : "Outside the posts."
-                        : ready
-                          ? `Penalty ${(game?.attempts || 0) + 1} of 5`
-                          : view === "flight"
-                            ? landed
-                              ? "Checking the result…"
-                              : "Ball in play"
-                            : "Preparing the next shot…"}
+                    : game?.abandoned
+                      ? "Match ended after 90 seconds without a kick."
+                      : completed
+                        ? `${winner}! ${goals}–${jevGoals}.`
+                        : view === "result" && defending
+                          ? shot?.outcome === "saved"
+                            ? "You read that one."
+                            : "Jev found a way through."
+                          : view === "result"
+                            ? shot?.outcome === "goal"
+                              ? shot?.reaction === "late"
+                                ? "Jev was too late."
+                                : shot?.reaction === "unavailable"
+                                  ? "Jev could not respond."
+                                  : "Past the keeper."
+                              : shot?.outcome === "saved"
+                                ? "Jev read that one."
+                                : shot?.aim && shot.aim.y > 0.965
+                                  ? "Over the crossbar."
+                                  : "Outside the posts."
+                            : ready
+                              ? `Round ${Math.ceil(((game?.attempts || 0) + 1) / 2)} · ${defending ? "You’re in goal" : "Your kick"}`
+                              : view === "flight"
+                                ? landed
+                                  ? "Checking the result…"
+                                  : "Ball in play"
+                                : "Preparing the next shot…"}
                 </div>
-                {error ? (
+                {game?.abandoned ||
+                (trace && ["failed", "canceled"].includes(trace.status)) ? (
+                  <button className="primary" onClick={start}>
+                    Start again
+                  </button>
+                ) : error ? (
                   <button
                     className="primary"
                     onClick={() => session && dispatch(session.command)}
@@ -373,17 +511,25 @@ export default function App() {
                     disabled={!game?.ready || !game?.turn?.ready}
                     onClick={next}
                   >
-                    {game?.turn?.ready ? "Next shot" : "Preparing…"}
+                    {game?.turn?.ready
+                      ? defending
+                        ? "Your kick"
+                        : "Keep goal"
+                      : "Preparing…"}
                     <ArrowRight size={16} />
                   </button>
                 ) : session ? (
                   <button
                     className="primary"
                     disabled={!ready}
-                    onClick={() => shoot(aim)}
+                    onClick={() => (defending ? void faceJev() : shoot(aim))}
                   >
                     {ready ? (
-                      "Shoot"
+                      defending ? (
+                        "Ready in goal"
+                      ) : (
+                        "Shoot"
+                      )
                     ) : (
                       <>
                         <LoaderCircle size={16} className="spin" />
@@ -396,7 +542,7 @@ export default function App() {
                     )}
                   </button>
                 ) : (
-                  <span className="controls-note">Can you score all five?</span>
+                  <span className="controls-note">Score more than Jev.</span>
                 )}
               </div>
             </section>
@@ -415,31 +561,32 @@ export default function App() {
                 <span>{game?.totalAttempts || 0} attempts</span>
               </div>
             </div>
-            <details className="keyboard-controls">
-              <summary>Direction controls</summary>
-              <div>
-                {[
-                  ["High left", -0.62, 0.76],
-                  ["High center", 0, 0.76],
-                  ["High right", 0.62, 0.76],
-                  ["Low left", -0.62, 0.25],
-                  ["Low center", 0, 0.25],
-                  ["Low right", 0.62, 0.25],
-                ].map(([label, x, y]) => (
-                  <button
-                    key={label}
-                    disabled={!ready}
-                    onClick={() => shoot({ x: Number(x), y: Number(y) })}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </details>
+            {!defending && (
+              <details className="keyboard-controls">
+                <summary>Direction controls</summary>
+                <div>
+                  {[
+                    ["High left", -0.62, 0.76],
+                    ["High center", 0, 0.76],
+                    ["High right", 0.62, 0.76],
+                    ["Low left", -0.62, 0.25],
+                    ["Low center", 0, 0.25],
+                    ["Low right", 0.62, 0.25],
+                  ].map(([label, x, y]) => (
+                    <button
+                      key={label}
+                      disabled={!ready}
+                      onClick={() => shoot({ x: Number(x), y: Number(y) })}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
           <Trace
             trace={trace}
-            history={history}
             turn={game?.turn}
             released={session?.command.action === "shoot"}
             waiting={sending || (!!session && !trace)}
@@ -462,19 +609,22 @@ export default function App() {
       </footer>
       {about && (
         <Panel title="How it works" close={() => setAbout(false)}>
-          <h2>You shoot. Jev reacts.</h2>
+          <h2>Five kicks each.</h2>
           <p>
-            Tap a spot or draw a path. Releasing starts the kick. Jev has 850 ms
-            from release to choose a move. Late decisions cannot save.
+            Tap or draw your shot. Jev has 850 ms to react. Then swap: Jev
+            chooses a target, and you use Left/Right and Space to keep it out.
+            Most goals wins; equal scores are a draw.
           </p>
           <ol>
             <li>
               <strong>Render Workflows</strong> saves the player, starts the
-              match, runs each penalty, and finalizes the score.
+              match, runs all ten turns under one parent task, and finalizes the
+              score.
             </li>
             <li>
-              <strong>TypeSafe Jev</strong> returns a defensive zone or chooses
-              to leave a miss, with probabilities for each action.
+              <strong>TypeSafe Jev</strong> chooses saves and shot targets. His
+              target is committed before your current keeper movement. Completed
+              turns are the only history he sees.
             </li>
             <li>
               <strong>Render Postgres</strong> keeps your shots and score.

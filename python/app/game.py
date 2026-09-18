@@ -51,14 +51,16 @@ def record(state, number, aim):
     if (
         state["finished"]
         or number != sum(bool(s.get("outcome")) for s in state["shots"]) + 1
-        or number > 5
+        or number > CONFIG["shots"] * 2
     ):
         raise ValueError("Penalty out of order.")
     shot.update(
         aim=aim,
         **resolve_shot(
             aim,
-            "leave_wide"
+            ("leave_wide" if shot.get("reaction") == "late" else "human")
+            if shot.get("shooter") == "jev"
+            else "leave_wide"
             if shot.get("reaction") in ["late", "unavailable"]
             else shot["decision"]["choice"],
             shot["keeper"],
@@ -78,11 +80,16 @@ def public_game(match, totals):
         started=bool(state.get("started")),
         ready=bool(state.get("started"))
         and not state["finished"]
-        and len(shots) < 5
+        and not state.get("abandoned")
+        and len(shots) < CONFIG["shots"] * 2
         and not any(not s.get("outcome") for s in state["shots"]),
         finished=state["finished"],
+        abandoned=bool(state.get("abandoned")),
         attempts=len(shots),
-        goals=sum(s["outcome"] == "goal" for s in shots),
+        goals=sum(s["outcome"] == "goal" and s.get("shooter") != "jev" for s in shots),
+        jevGoals=sum(
+            s["outcome"] == "goal" and s.get("shooter") == "jev" for s in shots
+        ),
         totalAttempts=totals["attempts"],
         totalGoals=totals["goals"],
     )
@@ -98,9 +105,9 @@ def submit(state, number, aim):
         not state.get("started")
         or state["finished"]
         or number != sum(bool(s.get("outcome")) for s in state["shots"]) + 1
-        or number > 5
+        or number > CONFIG["shots"] * 2
     ):
         raise ValueError("Penalty out of order.")
-    shot = dict(number=number, aim=aim)
+    shot = dict(number=number, aim=aim, shooter="player" if number % 2 else "jev")
     state["shots"].append(shot)
     return shot

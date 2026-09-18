@@ -1,9 +1,16 @@
 import { task } from "@renderinc/sdk/workflows";
-import { createMatch, changeMatch } from "./store";
-import { decideKeeper } from "./keeper";
+import { createMatch, changeMatch, readMatch } from "./store";
+import { decideKeeper, decideShot } from "./keeper";
 import { record, submit, keeperMove, resolveShot } from "./game";
 import config from "../../shared/game.json";
-import { waitForInput, readInput, saveReaction } from "./inputs";
+import {
+  prepareInput,
+  waitForInput,
+  readInput,
+  saveReaction,
+  saveAttack,
+  waitForDefense,
+} from "./inputs";
 import type { Command, Shot } from "../../shared/types";
 const retry = { maxRetries: 2, waitDurationMs: 500, backoffScaling: 2 };
 const settings = { plan: "flex" as const, retry, timeoutSeconds: 120 };
@@ -48,7 +55,7 @@ const goalkeeperAction = task(
     if (slot.reaction) return slot.reaction;
     const { aim, path } = slot.input;
     const released = new Date(slot.released_at).getTime();
-    const shot: Shot = { number: cmd.number!, aim, path };
+    const shot: Shot = { number: cmd.number!, shooter: "player", aim, path };
     const remaining = config.reactionWindowMs - (Date.now() - released);
     try {
       if (remaining <= 0) throw new Error("Deadline passed.");
@@ -83,39 +90,112 @@ const recordResult = task(
     });
   },
 );
+
+const prepareTurn = task(
+  { ...settings, name: "prepare_turn" },
+  async (_ctx, cmd: Command) => {
+    const slot = await prepareInput(cmd.matchId, cmd.number!);
+    return { ...cmd, inputId: slot.id };
+  },
+);
+const jevKick = task(
+  { ...settings, name: "jev_kick" },
+  async (_ctx, cmd: Command) => {
+    let attack = (await readInput(cmd.matchId, cmd.number!)).attack as
+      | Shot
+      | undefined;
+    if (!attack) {
+      const match = await readMatch(cmd.matchId, cmd.owner);
+      const decision = await decideShot(match.state.shots);
+      const zone = config.zones[decision.choice as keyof typeof config.zones];
+      const aim = { x: zone.x, y: zone.y };
+      attack = await saveAttack(cmd.inputId!, {
+        number: cmd.number!,
+        shooter: "jev",
+        aim,
+        decision,
+        path: [
+          { x: 0, y: 0.06 },
+          { x: aim.x / 2, y: (aim.y + 0.06) / 2 + 0.3 },
+          aim,
+        ],
+      });
+    }
+    const slot = await waitForInput(cmd, "player");
+    if (!slot) return null;
+    return changeMatch(cmd.matchId, cmd.owner, (m) =>
+      Object.assign(submit(m.state, cmd.number!, attack!.aim!), attack),
+    );
+  },
+);
+const playerSave = task(
+  { ...settings, name: "player_save" },
+  async (_ctx, cmd: Command) => {
+    const slot = await waitForInput(cmd, "keeper");
+    if (!slot) return null;
+    if (slot.reaction) return slot.reaction;
+    const input = await waitForDefense(cmd);
+    const keeper = input.defense || { x: 0, y: 0.25 };
+    const shot: Shot = {
+      ...input.attack,
+      keeperAction: input.defense ? "dive" : "hold",
+      reaction: input.defense ? "ready" : "late",
+      ...resolveShot(
+        input.attack.aim,
+        input.defense ? "human" : "leave_wide",
+        keeper,
+      ),
+    };
+    return saveReaction(slot.id, shot);
+  },
+);
 const finishMatch = task(
   { ...settings, name: "finish_match" },
   async (_ctx, cmd: Command) =>
     changeMatch(cmd.matchId, cmd.owner, (m) => {
-      if (m.state.shots.filter((s) => s.outcome).length !== 5)
-        throw new Error("Match is not complete.");
-      m.state.finished = true;
+      const completed = m.state.shots.filter((s) => s.outcome);
+      m.state.finished = completed.length === config.shots * 2;
+      m.state.abandoned = !m.state.finished;
       return {
-        goals: m.state.shots.filter((s) => s.outcome === "goal").length,
-        attempts: 5,
+        goals: completed.filter(
+          (s) => s.shooter !== "jev" && s.outcome === "goal",
+        ).length,
+        jevGoals: completed.filter(
+          (s) => s.shooter === "jev" && s.outcome === "goal",
+        ).length,
+        abandoned: m.state.abandoned,
       };
     }),
 );
-
-export const startGame = task(
-  { ...parent, name: "start_game" },
+const takePenalty = task(
+  { ...parent, name: "take_penalty" },
+  async (ctx, cmd: Command) => {
+    const input = await ctx.run(prepareTurn, cmd);
+    const [kick, keeper] =
+      cmd.number! % 2
+        ? await Promise.all([
+            ctx.run(playerKick, input),
+            ctx.run(goalkeeperAction, input),
+          ])
+        : await Promise.all([
+            ctx.run(jevKick, input),
+            ctx.run(playerSave, input),
+          ]);
+    if (!kick || !keeper) return { expired: true };
+    await ctx.run(recordResult, cmd);
+    return { expired: false };
+  },
+);
+// One root owns the whole match. Root retries are disabled to avoid replaying the game.
+task(
+  { ...parent, name: "run_game", timeoutSeconds: 1200 },
   async (ctx, cmd: Command) => {
     await ctx.run(registerPlayer, cmd);
     await ctx.run(beginMatch, cmd);
-    return { matchId: cmd.matchId };
-  },
-);
-export const takePenalty = task(
-  { ...parent, name: "take_penalty" },
-  async (ctx, cmd: Command) => {
-    // Both tasks wait for the same immutable input, on separate Render instances.
-    const [kick, keeper] = await Promise.all([
-      ctx.run(playerKick, cmd),
-      ctx.run(goalkeeperAction, cmd),
-    ]);
-    if (!kick || !keeper) return { number: cmd.number, expired: true };
-    const shot = await ctx.run(recordResult, cmd);
-    if (cmd.number === 5) await ctx.run(finishMatch, cmd);
-    return { number: cmd.number, outcome: shot.outcome };
+    for (let number = 1; number <= config.shots * 2; number++) {
+      const turn = await ctx.run(takePenalty, { ...cmd, number });
+      if (turn.expired) break;
+    }
+    return ctx.run(finishMatch, cmd);
   },
 );

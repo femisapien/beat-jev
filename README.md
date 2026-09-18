@@ -1,6 +1,6 @@
 # Beat Jev
 
-Five penalties against TypeSafe Jev. Every turn runs on **Render Workflows**, with scores saved in **Render Postgres**.
+A penalty shootout against TypeSafe Jev. Take turns shooting and keeping goal. One **Render Workflows** task owns the match, with scores saved in **Render Postgres**.
 
 | Example    | Code and deploy                                                                                | Play                                                                                                           |
 | ---------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |

@@ -3,15 +3,20 @@ import { useFrame, useLoader } from "@react-three/fiber";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import * as THREE from "three";
+import type { Aim } from "../../shared/types";
 import type { Playback } from "./playback";
 
 // One CC0 human rig, shared by both actors. Each actor owns its skeleton and kit.
 export default function Footballer({
   keeper = false,
+  human = !keeper,
+  control,
   flight,
   reducedMotion,
 }: {
   keeper?: boolean;
+  human?: boolean;
+  control?: Aim;
   flight: Playback | null;
   reducedMotion: boolean;
 }) {
@@ -25,19 +30,20 @@ export default function Footballer({
           ? node.material
           : [node.material];
         skin ||= materials.find((m) => m.name === "MI_Superhero_Male") as
-          THREE.MeshStandardMaterial | undefined;
+          | THREE.MeshStandardMaterial
+          | undefined;
       }
     });
     const kit = skin!.clone();
     kit.onBeforeCompile = (shader) => {
       shader.uniforms.jersey = {
-        value: new THREE.Color(keeper ? "#9759e4" : "#f4f2e7"),
+        value: new THREE.Color(human ? "#f4f2e7" : "#9759e4"),
       };
       shader.uniforms.shorts = {
-        value: new THREE.Color(keeper ? "#512784" : "#213c35"),
+        value: new THREE.Color(human ? "#213c35" : "#512784"),
       };
       shader.uniforms.socks = {
-        value: new THREE.Color(keeper ? "#713abb" : "#eeeedd"),
+        value: new THREE.Color(human ? "#eeeedd" : "#713abb"),
       };
       shader.uniforms.isKeeper = { value: keeper ? 1 : 0 };
       shader.vertexShader =
@@ -84,18 +90,18 @@ export default function Footballer({
             return kit;
           const material = m.clone() as THREE.MeshStandardMaterial;
           if (material.name === "jersey")
-            material.color.set(keeper ? "#9759e4" : "#f4f2e7");
+            material.color.set(human ? "#f4f2e7" : "#9759e4");
           if (material.name === "shorts")
-            material.color.set(keeper ? "#512784" : "#213c35");
+            material.color.set(human ? "#213c35" : "#512784");
           if (material.name === "socks")
-            material.color.set(keeper ? "#713abb" : "#eeeedd");
+            material.color.set(human ? "#eeeedd" : "#713abb");
           return material;
         });
         node.material = Array.isArray(node.material) ? materials : materials[0];
       }
     });
     return { object, rest };
-  }, [asset, keeper]);
+  }, [asset, keeper, human]);
   const actor = useRef<THREE.Group>(null);
   const temp = useMemo(
     () => ({
@@ -122,7 +128,14 @@ export default function Footballer({
   }
   useFrame(({ clock }) => {
     if (!actor.current) return;
-    const shot = flight?.reaction;
+    const shot = control
+      ? {
+          aim: control,
+          keeper: control,
+          keeperAction: "dive",
+          outcome: undefined,
+        }
+      : flight?.reaction;
     const t = flight
       ? reducedMotion
         ? 1
@@ -133,19 +146,21 @@ export default function Footballer({
           )
       : 0;
     const moves = keeper && shot && shot.keeperAction === "dive";
-    const dive = moves
-      ? reducedMotion
-        ? 1
-        : THREE.MathUtils.smoothstep(
-            (performance.now() -
-              (flight?.keeperStartedAt || performance.now())) /
-              450,
-            0,
-            1,
-          )
-      : 0;
+    const dive = control
+      ? 1
+      : moves
+        ? reducedMotion
+          ? 1
+          : THREE.MathUtils.smoothstep(
+              (performance.now() -
+                (flight?.keeperStartedAt || performance.now())) /
+                450,
+              0,
+              1,
+            )
+        : 0;
     const low = !!moves && (shot?.aim?.y || 0) < 0.4;
-    const direction = Math.sign(shot?.keeper?.x || 0);
+    const direction = control ? 0 : Math.sign(shot?.keeper?.x || 0);
     const kick = flight ? Math.sin(Math.min(1, t * 2.6) * Math.PI) : 0;
     actor.current.position.set(keeper ? 0 : -0.32, 0, keeper ? -5.78 : 5.17);
     actor.current.rotation.set(0, keeper ? 0 : Math.PI, 0);
@@ -155,13 +170,13 @@ export default function Footballer({
       "upperarm_l",
       keeper ? -0.18 - (low ? dive * 0.6 : 0) : 0,
       0,
-      keeper ? -0.98 + dive * (low ? 0.2 : 2.1) : -1.35,
+      keeper ? -0.98 + dive * (low ? 0.2 : control ? 1.65 : 2.1) : -1.35,
     );
     rotate(
       "upperarm_r",
       keeper ? -0.18 - (low ? dive * 0.6 : 0) : 0,
       0,
-      keeper ? 0.98 - dive * (low ? 0.2 : 2.1) : 1.35,
+      keeper ? 0.98 - dive * (low ? 0.2 : control ? 1.65 : 2.1) : 1.35,
     );
     rotate("lowerarm_l", 0, keeper ? -0.55 : 0, keeper ? -0.15 : 0);
     rotate("lowerarm_r", 0, keeper ? 0.55 : 0, keeper ? 0.15 : 0);
@@ -176,7 +191,7 @@ export default function Footballer({
         -direction * dive * (shot?.aim && shot.aim.y < 0.4 ? 1.45 : 1.02);
       if (!direction)
         actor.current.rotation.x =
-          (shot?.aim && shot.aim.y < 0.4 ? 0.85 : 0) * dive;
+          (shot?.aim && shot.aim.y < 0.4 ? (control ? 0.45 : 0.85) : 0) * dive;
       actor.current.updateMatrixWorld(true);
       if (dive > 0 && shot?.keeper) {
         const target = shot.outcome === "saved" ? shot.aim! : shot.keeper;
@@ -187,7 +202,7 @@ export default function Footballer({
         temp.p.copy(temp.l).add(temp.r).multiplyScalar(0.5);
         actor.current.position.x += (target.x * 3.66 - temp.p.x) * dive;
         actor.current.position.y = Math.max(
-          -0.04,
+          control && control.y > 0.5 ? 0.24 : -0.04,
           actor.current.position.y + (target.y * 2.44 - temp.p.y) * dive,
         );
       }

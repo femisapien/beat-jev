@@ -1,6 +1,6 @@
 # Beat Jev · Python
 
-Five shots against an AI keeper. **Render Workflows** runs every turn; **TypeSafe Jev** picks the keeper’s move; **Render Postgres** keeps the score.
+You and Jev take five kicks each. **Render Workflows** runs the whole match and its subtasks; **TypeSafe Jev** chooses shots and saves; **Render Postgres** keeps the score.
 
 <a href="https://render.com/docs/workflows?utm_source=github&utm_medium=referral&utm_campaign=ojus_demos&utm_content=readme_workflows" target="_blank" rel="noopener noreferrer"><img alt="Render Workflows" src="https://img.shields.io/badge/Render-Workflows-6D3BC6?logo=render&logoColor=white" /></a>
 <a href="https://typesafe.ai" target="_blank" rel="noopener noreferrer"><img alt="TypeSafe Jev" src="https://img.shields.io/badge/TypeSafe-Jev-252525" /></a>
@@ -13,15 +13,16 @@ Five shots against an AI keeper. **Render Workflows** runs every turn; **TypeSaf
 
 ## Deploy
 
-The Blueprint creates a paid web service, a usage-billed workflow with all eight tasks, and a paid Postgres database. Enter your **Render API key** and **TypeSafe API key** when prompted. Database connections and the workflow slug are wired automatically. No OpenRouter key is needed.
+The Blueprint creates a paid web service, a usage-billed workflow with all eleven tasks, and a paid Postgres database. Enter your **Render API key** and **TypeSafe API key** when prompted. Database connections and the workflow slug are wired automatically. No OpenRouter key is needed.
 
 ## Play
 
 1. Enter a nickname and press **Play**.
 2. Tap a spot or draw a path. Release to kick. Arrow keys and Space also work.
-3. Take five penalties. Press **Try again** for a new match.
+3. Swap roles. Press **Ready in goal**, then use Left/Right to move and hold Space to jump. Touch controls work too.
+4. Five kicks each. Most goals wins. Press **Try again** for a new match.
 
-Player input and Jev run in parallel. A late reaction cannot save. The progress strip follows your match. The **Render Workflows** panel shows each player and goalkeeper task live; expand Jev’s move for its input and response.
+One parent task owns ten alternating turns. Player and keeper subtasks run in parallel; saving the result waits for both. Jev commits his shot before seeing your current movement. The **Render Workflows** panel shows the real task tree; expand Jev’s decision for its input and response.
 
 ## Local development
 

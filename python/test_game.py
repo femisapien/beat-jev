@@ -63,6 +63,27 @@ class GameTests(unittest.TestCase):
         shot.update(keeper_move(aim, "leave_wide"))
         self.assertEqual(record(s, 1, aim)["outcome"], "goal")
 
+    def test_alternating_scores(self):
+        s = state()
+        for number in range(1, 11):
+            aim = dict(x=-0.62, y=0.25)
+            shot = submit(s, number, aim)
+            self.assertEqual(shot["shooter"], "player" if number % 2 else "jev")
+            shot.update(
+                decision=D,
+                reaction="ready",
+                keeperAction="dive",
+                keeper=dict(x=0.62, y=0.25) if number % 2 else aim,
+            )
+            record(s, number, aim)
+        g = public_game(
+            dict(id="test", name="Guest", state=s), dict(attempts=5, goals=5)
+        )
+        self.assertEqual((g["goals"], g["jevGoals"], g["attempts"]), (5, 0, 10))
+        self.assertFalse(g["ready"])
+        with self.assertRaises(ValueError):
+            submit(s, 11, dict(x=0, y=0.25))
+
     def test_pending_is_hidden(self):
         m = dict(id="test", name="Guest", owner_hash="hidden", state=state())
         self.assertTrue(public_game(m, dict(attempts=0, goals=0))["ready"])

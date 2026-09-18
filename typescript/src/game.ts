@@ -39,16 +39,20 @@ export function record(state: State, number: number, aim: Aim) {
   if (
     state.finished ||
     number !== state.shots.filter((s) => s.outcome).length + 1 ||
-    number > config.shots
+    number > config.shots * 2
   )
     throw new Error("Penalty out of order.");
   Object.assign(shot, {
     aim,
     ...resolveShot(
       aim,
-      shot.reaction && shot.reaction !== "ready"
-        ? "leave_wide"
-        : shot.decision!.choice,
+      shot.shooter === "jev"
+        ? shot.reaction === "late"
+          ? "leave_wide"
+          : "human"
+        : shot.reaction && shot.reaction !== "ready"
+          ? "leave_wide"
+          : shot.decision!.choice,
       shot.keeper,
     ),
     committedAt: new Date().toISOString(),
@@ -68,11 +72,16 @@ export function publicGame(
     ready:
       !!match.state.started &&
       !match.state.finished &&
-      shots.length < config.shots &&
+      !match.state.abandoned &&
+      shots.length < config.shots * 2 &&
       !match.state.shots.some((s) => !s.outcome),
     finished: match.state.finished,
+    abandoned: !!match.state.abandoned,
     attempts: shots.length,
-    goals: shots.filter((s) => s.outcome === "goal").length,
+    goals: shots.filter((s) => s.outcome === "goal" && s.shooter !== "jev")
+      .length,
+    jevGoals: shots.filter((s) => s.outcome === "goal" && s.shooter === "jev")
+      .length,
     totalAttempts: totals.attempts,
     totalGoals: totals.goals,
   };
@@ -90,10 +99,10 @@ export function submit(state: State, number: number, aim: Aim) {
     !state.started ||
     state.finished ||
     number !== state.shots.filter((s) => s.outcome).length + 1 ||
-    number > config.shots
+    number > config.shots * 2
   )
     throw new Error("Penalty out of order.");
-  const shot: Shot = { number, aim };
+  const shot: Shot = { number, aim, shooter: number % 2 ? "player" : "jev" };
   state.shots.push(shot);
   return shot;
 }

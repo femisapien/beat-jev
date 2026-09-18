@@ -5,10 +5,11 @@ export type Decision = {
   confidence: number;
   model: string;
   durationMs: number;
-  state: { ball: { projectedCrossing: Aim }; coordinates: string };
+  state: Record<string, unknown>;
 };
 export type Shot = {
   number: number;
+  shooter?: "player" | "jev";
   path?: Aim[];
   reaction?: "ready" | "late" | "unavailable";
   reactionMs?: number;
@@ -18,8 +19,14 @@ export type Shot = {
   keeper?: Aim;
   keeperAction?: "dive" | "hold";
   committedAt?: string;
+  releasedAt?: number;
 };
-export type State = { shots: Shot[]; finished: boolean; started?: boolean };
+export type State = {
+  shots: Shot[];
+  finished: boolean;
+  started?: boolean;
+  abandoned?: boolean;
+};
 export type Match = {
   id: string;
   name: string;
@@ -35,10 +42,14 @@ export type Game = {
   finished: boolean;
   attempts: number;
   goals: number;
+  jevGoals: number;
+  abandoned?: boolean;
   totalAttempts: number;
   totalGoals: number;
   turn?: Turn;
   activeShot?: Shot;
+  incomingShot?: Shot;
+  serverNow?: number;
 };
 export type Command = {
   matchId: string;
@@ -55,6 +66,7 @@ export type Turn = {
   ready: boolean;
   expired: boolean;
   submitted: boolean;
+  shooter: "player" | "jev";
 };
 export type Span = {
   id: string;
@@ -63,6 +75,8 @@ export type Span = {
   startedAt?: string;
   completedAt?: string;
   retries: number;
+  parentId?: string;
+  number?: number;
 };
 export type Trace = {
   id: string;

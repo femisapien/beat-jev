@@ -2,6 +2,7 @@ import type { Aim, Shot } from "../../shared/types";
 import config from "../../shared/game.json";
 export type Playback = {
   number: number;
+  shooter?: "player" | "jev";
   aim: Aim;
   path: Aim[];
   startedAt: number;

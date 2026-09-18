@@ -1,6 +1,6 @@
 {
   "shots": 5,
-  "rulesVersion": "penalty-v3",
+  "rulesVersion": "penalty-v4",
   "question": "You are the goalkeeper reacting to the CURRENT ball. Which defensive action fits the observed path? The game has already calculated ball.horizontal, ball.height and ball.path from its trajectory. Use those observations, not mental arithmetic. Directions are from the SHOOTER'S viewpoint, exactly as seen on the screen; never mirror left and right. If ball.path is outside the goal, stay upright and leave it. Otherwise defend the observed horizontal lane at the observed height. A corner may still be beyond your reach; attempt the matching defensive move anyway. Do not predict another shot, infer player habits, or choose a different zone for variety.",
   "zones": {
     "left_low": {
@@ -50,5 +50,14 @@
   "reactionWindowMs": 850,
   "flightMs": 1300,
   "runupMs": 180,
-  "readySeconds": 90
+  "readySeconds": 90,
+  "shootQuestion": "You are Jev, taking a penalty against a human goalkeeper. Choose one target to score. You can see ONLY completed turns in history. Look for areas the goalkeeper leaves uncovered. With no history, choose a corner. The human has not moved for this turn: never claim to know their current position. Directions are from the shooter viewpoint, the same left and right as the screen. Return one attacking target.",
+  "shootCriteria": {
+    "left_low": "Shoot low left. Target x=-0.62, y=0.25. Favor this target when completed goalkeeper movements leave it uncovered.",
+    "left_high": "Shoot high left. Target x=-0.62, y=0.76. Favor this target when completed goalkeeper movements leave it uncovered.",
+    "center_low": "Shoot low center. Target x=0, y=0.25. Favor this target when completed goalkeeper movements leave it uncovered.",
+    "center_high": "Shoot high center. Target x=0, y=0.76. Favor this target when completed goalkeeper movements leave it uncovered.",
+    "right_low": "Shoot low right. Target x=0.62, y=0.25. Favor this target when completed goalkeeper movements leave it uncovered.",
+    "right_high": "Shoot high right. Target x=0.62, y=0.76. Favor this target when completed goalkeeper movements leave it uncovered."
+  }
 }

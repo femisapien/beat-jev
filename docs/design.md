@@ -1,13 +1,17 @@
 # Beat Jev
 
-A separate playable demo. Route Lab stays unchanged.
+A five-round shootout, with one kick per player per round. Route Lab stays unchanged.
 
-Five penalties against TypeSafe Jev. The pitch and Shoot button are the main focus. Above them, one match progress strip shows player registration, kickoff, penalties 1 through 5, and full time. Show an always-visible execution panel on the right with actual Render task states for both player and goalkeeper. No fabricated completion percentages.
+Enter a name, take a shot, then take the gloves. The white kit is always the human and purple is always Jev. The scoreboard shows both scores; two rows of five markers preserve each player's attempts. A draw is a valid result. Try again starts a new match.
 
-Use human-proportioned CC0 Quaternius figures with football kits, Three.js, and React Three Fiber. Release starts the kick immediately. A tap sets a target; a drawn path shapes the flight. Mouse/touch aim has a keyboard equivalent. Respect reduced motion and show the goal and primary action on desktop and mobile.
+On human kicks, tap a target or draw a path and release to shoot. On Jev kicks, click Ready in goal, move with Left/Right or A/D, and hold Space, Up, or W to jump. Mobile buttons perform the same actions. Jev's target is committed before the human moves and hidden until release. Give the player control during flight, then freeze the keeper at impact.
 
-Match mutations run in Render Workflows; the API delivers a durable shot input. A submitted name starts a match. Each penalty prepares player input and goalkeeper tasks in parallel, then joins them before recording the result. Postgres protects retries with row locks. Animation frames and keystrokes stay in the browser. The top strip groups separate runs into one match; each ready window expires after 90 seconds.
+Use human-proportioned Quaternius CC0 figures, Three.js, and React Three Fiber. Reuse the pitch and swap kits when roles change. Keep controls and current role visible. Respect reduced motion. Align result text and score changes with ball arrival; never show a save before the ball reaches the keeper.
 
-Jev sees current ball observations. Code computes geometry and checks saves. Corners can beat the keeper's limited reach. Misses do not trigger a dive. The 850 ms reaction window includes transit and inference; late responses cannot save. Result text appears when the ball arrives. Task labels describe backend work without claiming that an animation has already happened. Show actual choice probabilities, not save probabilities. The exact question and observations remain inspectable.
+One root Render task owns registration, match start, ten sequential penalty child tasks, and finish. Each penalty prepares an input slot, starts player/keeper subtasks in parallel, and joins them before recording the score. The right panel displays actual Render task hierarchy, states, and IDs. Completed turns collapse. The top strip shows five rounds. Durations include waiting, never invented completion percentages.
 
-Try again starts a new match with the same name. Retry repeats the same failed command without spending another penalty. Check both SDKs, five-shot completion, save/goal/wide outcomes, retries, concurrent submissions, ownership, complete Blueprints, desktop/mobile layout, and real cloud runs before release.
+Postgres owns input and score records. Browser animation and key events remain local. Each input window expires after 90 seconds, and the match then closes without inventing a kick. Completed attempts remain in the player's browser-scoped totals.
+
+Jev chooses typed actions from structured observations. Code computes geometry and saves. Shot decisions use only completed human keeper history. A score compares play in this game, not general intelligence. Show choice probabilities without labeling them save odds.
+
+Verify full alternating matches, one actual root, nested sequential/parallel task relationships, saves/goals/misses, timing, retries, ownership, refresh recovery, and desktop/mobile controls in both SDK versions before deployment.

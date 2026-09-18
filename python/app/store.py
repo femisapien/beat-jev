@@ -77,7 +77,28 @@ async def totals(owner):
     async with connection() as conn:
         return await (
             await conn.execute(
-                "SELECT count(*)::int AS attempts, count(*) FILTER (WHERE shot->>'outcome'='goal')::int AS goals FROM matches, jsonb_array_elements(state->'shots') shot WHERE owner_hash=%s AND shot ? 'outcome'",
+                "SELECT count(*)::int AS attempts, count(*) FILTER (WHERE shot->>'outcome'='goal')::int AS goals FROM matches, jsonb_array_elements(state->'shots') shot WHERE owner_hash=%s AND shot ? 'outcome' AND COALESCE(shot->>'shooter','player')='player'",
                 (owner,),
             )
         ).fetchone()
+
+
+async def start_run(match_id, owner, start):
+    # Serialize repeat clicks and reuse the root run on ordinary HTTP retries.
+    async with connection() as conn:
+        await conn.execute(
+            "INSERT INTO match_runs(match_id,owner_hash) VALUES(%s,%s) ON CONFLICT DO NOTHING",
+            (match_id, owner),
+        )
+        row = await (
+            await conn.execute(
+                "SELECT * FROM match_runs WHERE match_id=%s FOR UPDATE", (match_id,)
+            )
+        ).fetchone()
+        if row["owner_hash"] != owner:
+            raise LookupError("Match not found.")
+        run_id = row["run_id"] or await start()
+        await conn.execute(
+            "UPDATE match_runs SET run_id=%s WHERE match_id=%s", (run_id, match_id)
+        )
+        return run_id

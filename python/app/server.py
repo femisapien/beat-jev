@@ -10,10 +10,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from app.store import migrate, read_match, totals, pool
+from app.store import migrate, read_match, totals, pool, start_run
 from app.game import public_game
 from app.runs import render, WORKFLOW, read_trace, client
-from app.inputs import prepare_input, release_input, read_input, public_turn
+from app.inputs import release_input, read_input, public_turn, save_defense
 
 
 @asynccontextmanager
@@ -42,10 +42,10 @@ class PathPoint(BaseModel):
 
 class Play(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["start", "arm", "shoot"]
+    action: Literal["start", "shoot", "ready", "defend"]
     matchId: UUID
     name: str | None = Field(default=None, min_length=1, max_length=24)
-    number: int | None = Field(default=None, ge=1, le=5, strict=True)
+    number: int | None = Field(default=None, ge=1, le=10, strict=True)
     aim: Aim | None = None
     releasedAt: float | None = Field(default=None, allow_inf_nan=False)
     path: list[PathPoint] | None = Field(default=None, min_length=2, max_length=32)
@@ -112,18 +112,43 @@ async def play(request: Request):
         if not existing and (
             not match["state"].get("started")
             or match["state"]["finished"]
+            or match["state"].get("abandoned")
             or body.number
             != sum(bool(s.get("outcome")) for s in match["state"]["shots"]) + 1
         ):
             return JSONResponse({"error": "That penalty is not available."}, 409)
         cmd["number"] = body.number
-        if body.action == "arm":
-            if existing and existing.get("outcome"):
-                return JSONResponse({"error": "Penalty already finished."}, 409)
-            cmd["inputId"] = str(
-                (await prepare_input(cmd["matchId"], body.number))["id"]
-            )
+        if body.action == "ready":
+            if body.number % 2:
+                return JSONResponse({"error": "It is your turn to shoot."}, 409)
+            slot = await read_input(cmd["matchId"], body.number)
+            if not slot or not slot["attack"]:
+                return JSONResponse({"error": "Jev is still choosing."}, 409)
+            try:
+                await release_input(
+                    cmd["matchId"],
+                    body.number,
+                    dict(aim=slot["attack"]["aim"], path=slot["attack"]["path"]),
+                )
+            except ValueError as e:
+                return JSONResponse(dict(error=str(e)), 409)
+            return JSONResponse(dict(attack=slot["attack"]), 202)
+        elif body.action == "defend":
+            if (
+                body.number % 2
+                or body.aim is None
+                or abs(body.aim.x) > 0.9
+                or body.aim.y not in [0.25, 0.76]
+            ):
+                return JSONResponse({"error": "Invalid keeper position."}, 400)
+            try:
+                await save_defense(cmd["matchId"], body.number, body.aim.model_dump())
+            except ValueError as e:
+                return JSONResponse(dict(error=str(e)), 409)
+            return JSONResponse(dict(saved=True), 202)
         else:
+            if body.number % 2 == 0:
+                return JSONResponse({"error": "It is Jev's turn to shoot."}, 409)
             if body.aim is None:
                 return JSONResponse({"error": "Invalid shot path."}, 400)
             aim = body.aim.model_dump()
@@ -145,11 +170,12 @@ async def play(request: Request):
             except ValueError as e:
                 return JSONResponse(dict(error=str(e)), 409)
     try:
-        run = await render.workflows.start_task(
-            f"{WORKFLOW}/{'start_game' if body.action == 'start' else 'take_penalty'}",
-            [cmd],
-        )
-        return JSONResponse(dict(runId=run.id), 202)
+
+        async def start():
+            return (await render.workflows.start_task(f"{WORKFLOW}/run_game", [cmd])).id
+
+        run_id = await start_run(cmd["matchId"], cmd["owner"], start)
+        return JSONResponse(dict(runId=run_id), 202)
     except Exception:
         return JSONResponse(
             {"error": "Could not start the task. Retry the same action."}, 503
@@ -165,6 +191,11 @@ async def game(match_id: UUID, request: Request):
             **public_game(match, await totals(request.state.owner)),
             turn=public_turn(slot),
             activeShot=slot["reaction"] if slot else None,
+            incomingShot=dict(
+                **slot["attack"], releasedAt=slot["released_at"].timestamp() * 1000
+            )
+            if slot and slot["released_at"] and slot["attack"]
+            else None,
             serverNow=time.time() * 1000,
         )
     except LookupError:
