@@ -4,7 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import * as THREE from "three";
 import type { Aim } from "../../shared/types";
-import type { Playback } from "./playback";
+import { keeperMotion, type Playback } from "./playback";
 
 // One CC0 human rig, shared by both actors. Each actor owns its skeleton and kit.
 export default function Footballer({
@@ -128,39 +128,21 @@ export default function Footballer({
   }
   useFrame(({ clock }) => {
     if (!actor.current) return;
-    const shot = control
-      ? {
-          aim: control,
-          keeper: control,
-          keeperAction: "dive",
-          outcome: undefined,
-        }
-      : flight?.reaction;
+    const now = performance.now();
+    const motion = keeperMotion(flight, now, reducedMotion);
+    const target = control || motion?.target;
     const t = flight
       ? reducedMotion
         ? 1
         : THREE.MathUtils.clamp(
-            (performance.now() - flight.startedAt) / 1100,
+            (now - flight.startedAt) / 1100,
             0,
             1,
           )
       : 0;
-    const moves = keeper && shot && shot.keeperAction === "dive";
-    const dive = control
-      ? 1
-      : moves
-        ? reducedMotion
-          ? 1
-          : THREE.MathUtils.smoothstep(
-              (performance.now() -
-                (flight?.keeperStartedAt || performance.now())) /
-                450,
-              0,
-              1,
-            )
-        : 0;
-    const low = !!moves && (shot?.aim?.y || 0) < 0.4;
-    const direction = control ? 0 : Math.sign(shot?.keeper?.x || 0);
+    const dive = keeper ? (control ? 1 : motion?.progress || 0) : 0;
+    const low = !!target && target.y < 0.4;
+    const direction = control ? 0 : Math.sign(target?.x || 0);
     const kick = flight ? Math.sin(Math.min(1, t * 2.6) * Math.PI) : 0;
     actor.current.position.set(keeper ? 0 : -0.32, 0, keeper ? -5.78 : 5.17);
     actor.current.rotation.set(0, keeper ? 0 : Math.PI, 0);
@@ -188,13 +170,12 @@ export default function Footballer({
     if (keeper) {
       actor.current.position.y = -0.04;
       actor.current.rotation.z =
-        -direction * dive * (shot?.aim && shot.aim.y < 0.4 ? 1.45 : 1.02);
+        -direction * dive * (low ? 1.45 : 1.02);
       if (!direction)
         actor.current.rotation.x =
-          (shot?.aim && shot.aim.y < 0.4 ? (control ? 0.45 : 0.85) : 0) * dive;
+          (low ? (control ? 0.45 : 0.85) : 0) * dive;
       actor.current.updateMatrixWorld(true);
-      if (dive > 0 && shot?.keeper) {
-        const target = shot.outcome === "saved" ? shot.aim! : shot.keeper;
+      if (dive > 0 && target) {
         const left = rig.object.getObjectByName("hand_l")!,
           right = rig.object.getObjectByName("hand_r")!;
         left.getWorldPosition(temp.l);

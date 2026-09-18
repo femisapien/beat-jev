@@ -27,7 +27,7 @@ The white kit is always you; purple is always Jev. The players swap roles. Resul
 
 ## Timing and recovery
 
-Jev has 850 ms from your release to choose a save. Browser clock calibration is approximate; network transit and inference consume that window. A late or unavailable answer cannot save. The ball takes 180 ms of run-up and 1,300 ms of flight. The browser does not restart the ball clock when a decision arrives.
+Jev has 850 ms from your release to choose a save. Browser clock calibration is approximate; network transit and inference consume that window. A late or unavailable answer cannot save. The ball takes 180 ms of run-up and 1,300 ms of flight. The browser does not restart the ball clock when a decision arrives. The keeper moves toward Jev's chosen zone, never the exact shot coordinates. A fast decision waits until the final 650 ms of flight to dive, reaching the zone at ball arrival. Late browser delivery still requires at least 450 ms of movement. Saves use the zone's reach area, not a simulated glove collision.
 
 For your save, controls stop at impact. The API allows five seconds from release for the final position to arrive. Missing input counts as a missed save. This is a browser game demonstration, not an authoritative multiplayer or anti-cheat system. A client could forge its position. AI and human turns also use different decision windows, so scores do not measure general intelligence.
 
