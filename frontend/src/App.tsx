@@ -27,6 +27,7 @@ import Trace from "./Trace";
 import { renderLink } from "../../shared/links";
 import type { Aim, Kick, Shot } from "../../shared/types";
 import { defaultKick, impactTime, endTime } from "../../shared/flight";
+import config from "../../shared/game.json";
 const GameScene = lazy(() => import("./GameScene"));
 class SceneBoundary extends Component<
   { children: ReactNode },
@@ -63,6 +64,16 @@ export default function App() {
     startingJev = useRef(false);
   const stage = useRef<HTMLDivElement>(null);
   const [keeperActive, setKeeperActive] = useState(false);
+  const [struck, setStruck] = useState(false);
+  useEffect(() => {
+    setStruck(false);
+    if (!flight) return;
+    const id = setTimeout(
+      () => setStruck(true),
+      Math.max(0, config.runupMs - (performance.now() - flight.startedAt)),
+    );
+    return () => clearTimeout(id);
+  }, [flight?.startedAt]);
   const turn = flight?.number || game?.turn?.number || 1;
   const defending = turn % 2 === 0;
   const completed = view === "result" && flight?.reaction?.number === 10;
@@ -128,6 +139,7 @@ export default function App() {
         kick: latest.kick,
         startedAt: performance.now() - endTime(latest.kick),
         reaction: latest,
+        positioning: latest.positioning,
         keeperStartedAt: performance.now() - 500,
       });
       if (latest.shooter === "jev") {
@@ -215,6 +227,7 @@ export default function App() {
       path: trajectory,
       kick,
       startedAt: performance.now(),
+      positioning: game.positioning,
     });
     void dispatch({
       action: "shoot",
@@ -365,11 +378,23 @@ export default function App() {
                       reducedMotion={reducedMotion}
                       defending={defending}
                       humanKeeper={controls.keeper}
+                      keeperStance={
+                        (
+                          flight?.positioning ||
+                          (game?.positioning?.number === turn
+                            ? game.positioning
+                            : undefined)
+                        )?.x || 0
+                      }
                     />
                   </Suspense>
                 </SceneBoundary>
                 <div className="stage-top">
-                  <span className="venue">THE TRAINING GROUND</span>
+                  <span className="venue">
+                    {session
+                      ? `ROUND ${Math.ceil(turn / 2)} / 5`
+                      : "PENALTY SHOOTOUT"}
+                  </span>
                   <span className="live-tag">
                     <i /> {language === "python" ? "Python" : "TypeScript"} SDK
                   </span>
@@ -514,7 +539,13 @@ export default function App() {
                               : view === "flight"
                                 ? landed
                                   ? "Checking the result…"
-                                  : "Ball in play"
+                                  : !struck
+                                    ? defending
+                                      ? "Jev’s run-up"
+                                      : "Your run-up"
+                                    : defending
+                                      ? "Make the save"
+                                      : "Ball in play"
                                 : "Preparing the next shot…"}
                 </div>
                 {game?.abandoned ||
@@ -594,6 +625,12 @@ export default function App() {
               }
               waiting={sending || (!!session && !trace)}
               shot={shot}
+              positioning={
+                flight?.positioning ||
+                (game?.positioning?.number === turn
+                  ? game.positioning
+                  : undefined)
+              }
             />
           </div>
         </div>
@@ -616,10 +653,10 @@ export default function App() {
           <h2>Five kicks each.</h2>
           <p>
             Tap to aim. A faster swipe adds power; a curved swipe adds curl. Jev
-            sees the first 160 ms of flight and has 850 ms from release to
-            decide. Then swap: Jev chooses a target. After the countdown, use
-            Left/Right and Space to keep it out. Most goals wins; equal scores
-            are a draw.
+            chooses a starting position from your past kicks, then reads the
+            first 160 ms of flight. It has 670 ms after contact to react. Then
+            swap: Jev chooses a target. After the countdown, use Left/Right and
+            Space to keep it out. Most goals wins; equal scores are a draw.
           </p>
           <ol>
             <li>

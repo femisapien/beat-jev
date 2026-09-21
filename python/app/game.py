@@ -7,10 +7,14 @@ CONFIG = json.loads(
 )
 
 
-def keeper_move(aim, choice):
+def keeper_move(aim, choice, start_x=0, available_ms=1000):
     hold = choice == "leave_wide"
+    target = {"x": start_x, "y": 0.4} if hold else CONFIG["zones"][choice]
+    reach = max(0, available_ms - 100) * 0.0048 / 3.66
     return dict(
-        keeper={"x": 0, "y": 0.4} if hold else CONFIG["zones"][choice],
+        keeper=dict(
+            x=max(start_x - reach, min(start_x + reach, target["x"])), y=target["y"]
+        ),
         keeperAction="hold" if hold else "dive",
     )
 
@@ -87,6 +91,7 @@ def public_game(match, totals):
         ),
         totalAttempts=totals["attempts"],
         totalGoals=totals["goals"],
+        positioning=state.get("positioning"),
     )
 
 

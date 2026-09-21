@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { impactMs, keeperMotion, type Playback } from "../frontend/src/playback";
+import {
+  impactMs,
+  keeperMotion,
+  type Playback,
+} from "../frontend/src/playback";
 
 const flight: Playback = {
   number: 1,
@@ -17,8 +21,8 @@ const flight: Playback = {
   },
 };
 test("fast decisions wait for the ball and finish the dive at impact", () => {
-  assert.equal(keeperMotion(flight, 1800)!.progress, 0);
-  const middle = keeperMotion(flight, 2155)!.progress;
+  assert.equal(keeperMotion(flight, 1000 + impactMs - 651)!.progress, 0);
+  const middle = keeperMotion(flight, 1000 + impactMs - 325)!.progress;
   assert.ok(middle > 0.4 && middle < 0.6);
   assert.ok(keeperMotion(flight, 1000 + impactMs - 50)!.progress < 1);
   assert.equal(keeperMotion(flight, 1000 + impactMs)!.progress, 1);
@@ -34,17 +38,21 @@ test("saved shots do not redirect the keeper from the chosen zone", () => {
   assert.deepEqual(keeperMotion(changedAim, 3000)!.target, first.target);
 });
 test("a delayed response cannot teleport or move the keeper before receipt", () => {
-  const late = { ...flight, keeperStartedAt: 2400 };
-  assert.equal(keeperMotion(late, 2399)!.progress, 0);
-  assert.equal(keeperMotion(late, 2400)!.progress, 0);
-  assert.ok(keeperMotion(late, 2480)!.progress < 0.1);
-  assert.equal(keeperMotion(late, 2850)!.progress, 1);
+  const arrival = 1000 + impactMs - 80;
+  const late = { ...flight, keeperStartedAt: arrival };
+  assert.equal(keeperMotion(late, arrival - 1)!.progress, 0);
+  assert.equal(keeperMotion(late, arrival)!.progress, 0);
+  assert.ok(keeperMotion(late, arrival + 80)!.progress < 0.1);
+  assert.equal(keeperMotion(late, arrival + 450)!.progress, 1);
 });
 test("no decision or a hold leaves the keeper in place", () => {
   assert.equal(keeperMotion(null, 3000), null);
   assert.equal(keeperMotion({ ...flight, reaction: undefined }, 3000), null);
   assert.equal(
-    keeperMotion({ ...flight, reaction: { number: 1, keeperAction: "hold" } }, 3000),
+    keeperMotion(
+      { ...flight, reaction: { number: 1, keeperAction: "hold" } },
+      3000,
+    ),
     null,
   );
   assert.equal(

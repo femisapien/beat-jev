@@ -22,6 +22,20 @@ async def decide_shot(history):
     return await decide(state, CONFIG["shootQuestion"], CONFIG["shootCriteria"], 5)
 
 
+async def decide_position(history):
+    state = dict(
+        completedKicks=[
+            dict(target=s.get("aim"), outcome=s["outcome"])
+            for s in history
+            if s.get("shooter") != "jev" and s.get("outcome")
+        ],
+        coordinates="Shooter view. Negative x is left, positive x is right. The next aim is not available.",
+    )
+    return await decide(
+        state, CONFIG["positionQuestion"], CONFIG["positionCriteria"], 2.5
+    )
+
+
 async def decide(state, question, criteria, timeout):
     started = perf_counter()
     async with AsyncTypeSafeClient(

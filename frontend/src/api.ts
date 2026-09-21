@@ -45,4 +45,4 @@ export type Session = {
   runId?: string;
   command: Play;
 };
-export const sessionKey = "beat-jev-v5-" + language;
+export const sessionKey = "beat-jev-v6-" + language;

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
+import { frameCamera } from "../frontend/src/camera";
 import { groundAim, missLabel } from "../frontend/src/playback";
 import { projectPointer } from "../frontend/src/ShotInput";
 import { resolveShot } from "../typescript/src/game";
@@ -17,18 +18,8 @@ test("canvas-relative projection preserves goal coordinates at desktop and mobil
     [360, 390],
   ]) {
     const rect = { left: 132, top: 359, width, height };
-    const cam = new THREE.PerspectiveCamera(
-      Math.max(
-        32,
-        THREE.MathUtils.radToDeg(2 * Math.atan(5.8 / ((18.5 * width) / height))),
-      ),
-      width / height,
-      0.1,
-      100,
-    );
-    cam.position.set(0, 3.2, 12.5);
-    cam.lookAt(0, 1.25, -2);
-    cam.updateMatrixWorld();
+    const cam = new THREE.PerspectiveCamera();
+    frameCamera(cam, width / height);
     for (const p of [
       new THREE.Vector3(0, 1.22, -6),
       new THREE.Vector3(-3.2, 0.2, -6),

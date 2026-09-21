@@ -46,6 +46,20 @@ export function decideShot(history: Shot[]): Promise<Decision> {
     5000,
   );
 }
+export function decidePosition(history: Shot[]): Promise<Decision> {
+  return decide(
+    {
+      completedKicks: history
+        .filter((s) => s.shooter !== "jev" && s.outcome)
+        .map((s) => ({ target: s.aim || null, outcome: s.outcome || null })),
+      coordinates:
+        "Shooter view. Negative x is left, positive x is right. The next aim is not available.",
+    },
+    config.positionQuestion,
+    config.positionCriteria,
+    2500,
+  );
+}
 export async function decideKeeper(
   samples: BallSample[],
   timeout = 10000,

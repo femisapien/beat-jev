@@ -83,6 +83,20 @@ class GameTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             submit(s, 11, dict(x=0, y=0.25))
 
+    def test_starting_position_changes_reach(self):
+        aim = dict(x=0.8, y=0.25)
+        near = keeper_move(aim, "right_low", 0.15, 500)
+        far = keeper_move(aim, "right_low", -0.15, 500)
+        self.assertEqual(
+            resolve_shot(aim, "right_low", near["keeper"])["outcome"], "saved"
+        )
+        self.assertEqual(
+            resolve_shot(aim, "right_low", far["keeper"])["outcome"], "goal"
+        )
+        self.assertEqual(
+            keeper_move(aim, "leave_wide", -0.15, 500)["keeper"]["x"], -0.15
+        )
+
     def test_pending_is_hidden(self):
         m = dict(id="test", name="Guest", owner_hash="hidden", state=state())
         self.assertTrue(public_game(m, dict(attempts=0, goals=0))["ready"])

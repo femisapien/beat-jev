@@ -120,3 +120,13 @@ test("alternating sides retain independent scores and ten ordered turns", () => 
   assert.equal(g.ready, false);
   assert.throws(() => submit(s, 11, { x: 0, y: 0.25 }), /order/);
 });
+
+test("starting position and decision time change reachable saves", () => {
+  const aim = { x: 0.8, y: 0.25 };
+  const near = keeperMove(aim, "right_low", 0.15, 500);
+  const far = keeperMove(aim, "right_low", -0.15, 500);
+  assert.equal(resolveShot(aim, "right_low", near.keeper).outcome, "saved");
+  assert.equal(resolveShot(aim, "right_low", far.keeper).outcome, "goal");
+  assert.equal(keeperMove(aim, "right_low", -0.15, 1000).keeper.x, 0.62);
+  assert.equal(keeperMove(aim, "leave_wide", -0.15, 500).keeper.x, -0.15);
+});

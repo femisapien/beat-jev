@@ -1,13 +1,12 @@
 import { chromium, expect } from "@playwright/test";
 import * as THREE from "three";
+import { frameCamera } from "../frontend/src/camera.ts";
 import assert from "node:assert/strict";
 const url = process.env.DEMO_URL || "http://127.0.0.1:5183";
 const mobile = process.env.MOBILE === "1";
 const browser = await chromium.launch({ channel: "chrome" });
 const page = await browser.newPage({
-  viewport: mobile
-    ? { width: 390, height: 844 }
-    : { width: 1440, height: 900 },
+  viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 },
   hasTouch: mobile,
   isMobile: mobile,
 });
@@ -17,7 +16,9 @@ const touch = async (type, p) => {
   if (type === "touchEnd" && !touching) return;
   await cdp.send("Input.dispatchTouchEvent", {
     type,
-    touchPoints: p ? [{ x: p.x, y: p.y, radiusX: 3, radiusY: 3, force: 1, id: 1 }] : [],
+    touchPoints: p
+      ? [{ x: p.x, y: p.y, radiusX: 3, radiusY: 3, force: 1, id: 1 }]
+      : [],
   });
   touching = type !== "touchEnd";
 };
@@ -56,7 +57,7 @@ await page.route("**/api/play", async (route) => {
       return;
     }
     released.set(b.number, Date.now());
-    if (delay) await new Promise((r) => setTimeout(r, 1200));
+    if (delay) await new Promise((r) => setTimeout(r, 1900));
   }
   await route.continue();
 });
@@ -70,32 +71,30 @@ const enabled = async (name) => {
     { timeout: 70000 },
   );
 };
-const phase = (turn, view, ready = false) => page.waitForFunction(
-  ({ turn, view, ready }) => {
-    const pitch = document.querySelector(".stage");
-    return pitch?.dataset.turn === String(turn) && pitch?.dataset.phase === view &&
-      (!ready || pitch?.dataset.ready === "true");
-  }, { turn, view, ready }, { timeout: 70000 },
-);
+const phase = (turn, view, ready = false) =>
+  page.waitForFunction(
+    ({ turn, view, ready }) => {
+      const pitch = document.querySelector(".stage");
+      return (
+        pitch?.dataset.turn === String(turn) &&
+        pitch?.dataset.phase === view &&
+        (!ready || pitch?.dataset.ready === "true")
+      );
+    },
+    { turn, view, ready },
+    { timeout: 70000 },
+  );
 async function recorded(number) {
-  await expect.poll(() => games.at(-1)?.shots.some(s => s.number === number), { timeout: 15000 }).toBe(true);
-  return games.at(-1).shots.find(s => s.number === number);
+  await expect
+    .poll(() => games.at(-1)?.shots.some((s) => s.number === number), {
+      timeout: 15000,
+    })
+    .toBe(true);
+  return games.at(-1).shots.find((s) => s.number === number);
 }
 function project(v, box) {
-  const cam = new THREE.PerspectiveCamera(
-    Math.max(
-      32,
-      THREE.MathUtils.radToDeg(
-        2 * Math.atan(5.8 / (18.5 * (box.width / box.height))),
-      ),
-    ),
-    box.width / box.height,
-    0.1,
-    100,
-  );
-  cam.position.set(0, 3.2, 12.5);
-  cam.lookAt(0, 1.25, -2);
-  cam.updateMatrixWorld();
+  const cam = new THREE.PerspectiveCamera();
+  frameCamera(cam, box.width / box.height);
   const p = new THREE.Vector3(...v).project(cam);
   return {
     x: box.x + ((p.x + 1) * box.width) / 2,
@@ -113,9 +112,18 @@ await page.screenshot({
 });
 for (let round = 1; round <= 5; round++) {
   await phase(round * 2 - 1, "aim", true);
-  assert.equal(await page.getByRole("button", { name: /^(Shoot|Ready in goal|Keep goal|Your kick)$/ }).count(), 0);
+  assert.equal(
+    await page
+      .getByRole("button", {
+        name: /^(Shoot|Ready in goal|Keep goal|Your kick)$/,
+      })
+      .count(),
+    0,
+  );
   const responsePromise = page.waitForResponse(
-    r => r.url().endsWith("/api/play") && r.request().postDataJSON().action === "ready",
+    (r) =>
+      r.url().endsWith("/api/play") &&
+      r.request().postDataJSON().action === "ready",
     { timeout: 70000 },
   );
   const box = await page.locator("canvas").boundingBox();
@@ -151,6 +159,14 @@ for (let round = 1; round <= 5; round++) {
   } else {
     delay = round === 3;
     abortShot = round === 4;
+    const target =
+      round === 3
+        ? [-2.27, 0.61, -6]
+        : round === 4
+          ? [1.83, 1.46, -6]
+          : [-2.27, 1.85, -6];
+    const point = project(target, box);
+    await page.mouse.move(point.x, point.y);
     await page.locator(".stage").focus();
     await page.keyboard.press("Space");
   }
@@ -171,11 +187,17 @@ for (let round = 1; round <= 5; round++) {
     assert.equal(human.aim.y, 0.06);
     assert.notEqual(human.outcome, "wide");
     assert.ok(
-      delivered.get(1) < 1480,
+      delivered.get(1) < 2200,
       "Jev reaction reaches browser during flight",
     );
   }
   if (round === 2) assert.ok(human.path.length >= (mobile ? 4 : 6));
+  if (round >= 3)
+    assert.equal(
+      Math.sign(human.aim.x),
+      round === 4 ? 1 : -1,
+      "Shot direction follows the new aim",
+    );
   if (round === 3) {
     assert.equal(human.reaction, "late");
     assert.equal(human.outcome, "goal");
@@ -183,15 +205,24 @@ for (let round = 1; round <= 5; round++) {
   if (round === 1) {
     // Pause when reading away from the pitch, including the desktop help dialog.
     if (mobile) await page.locator("footer").scrollIntoViewIfNeeded();
-    else await page.getByRole("button", { name: "How it works", exact: true }).click();
+    else
+      await page
+        .getByRole("button", { name: "How it works", exact: true })
+        .click();
     await page.waitForTimeout(3000);
-    assert.equal(commands.filter(c => c.action === "ready").length, 0);
+    assert.equal(commands.filter((c) => c.action === "ready").length, 0);
     if (mobile) await page.locator(".stage").scrollIntoViewIfNeeded();
-    else await page.getByRole("button", { name: "Close How it works", exact: true }).click();
+    else
+      await page
+        .getByRole("button", { name: "Close How it works", exact: true })
+        .click();
   }
   await phase(round * 2, "aim");
   await page.locator(".turn-countdown").waitFor({ state: "visible" });
-  assert.notEqual(await page.locator(".execution-status").innerText(), "Sending your shot…");
+  assert.notEqual(
+    await page.locator(".execution-status").innerText(),
+    "Sending your shot…",
+  );
   if (round === 2) {
     await page.reload();
     await phase(round * 2, "aim");
@@ -199,19 +230,32 @@ for (let round = 1; round <= 5; round++) {
   }
   if (round === 3) {
     await page.evaluate(() => {
-      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: true,
+      });
       document.dispatchEvent(new Event("visibilitychange"));
     });
     await page.waitForTimeout(2300);
-    assert.equal(commands.filter(c => c.action === "ready").length, round - 1);
+    assert.equal(
+      commands.filter((c) => c.action === "ready").length,
+      round - 1,
+    );
     await page.evaluate(() => {
       delete document.hidden;
       document.dispatchEvent(new Event("visibilitychange"));
     });
     await page.locator(".turn-countdown").waitFor({ state: "visible" });
   }
-  assert.ok(games.at(-1).incomingShot == null, "Target stays hidden before automatic release");
-  if (round === 1) await page.screenshot({ path: `work/${prefix}-countdown.png`, fullPage: true });
+  assert.ok(
+    games.at(-1).incomingShot == null,
+    "Target stays hidden before automatic release",
+  );
+  if (round === 1)
+    await page.screenshot({
+      path: `work/${prefix}-countdown.png`,
+      fullPage: true,
+    });
   const attack = (await (await responsePromise).json()).attack;
   await page.waitForTimeout(60);
   const direction = attack.aim.x < 0 ? "ArrowLeft" : "ArrowRight";
@@ -223,7 +267,10 @@ for (let round = 1; round <= 5; round++) {
     });
     const b = await button.boundingBox();
     if (travel) {
-      await touch("touchStart", { x: b.x + b.width / 2, y: b.y + b.height / 2 });
+      await touch("touchStart", {
+        x: b.x + b.width / 2,
+        y: b.y + b.height / 2,
+      });
       await page.waitForTimeout(travel);
       await touch("touchEnd");
     }
@@ -231,7 +278,10 @@ for (let round = 1; round <= 5; round++) {
       const jump = await page
         .getByRole("button", { name: "Keeper jump", exact: true })
         .boundingBox();
-      await touch("touchStart", { x: jump.x + jump.width / 2, y: jump.y + jump.height / 2 });
+      await touch("touchStart", {
+        x: jump.x + jump.width / 2,
+        y: jump.y + jump.height / 2,
+      });
     }
   } else {
     if (travel) {
@@ -260,7 +310,6 @@ for (let round = 1; round <= 5; round++) {
     await page.getByRole("status").innerText(),
     round === 5 ? "YOU WIN" : "YOU SAVED IT",
   );
-
 }
 assert.equal(
   commands.filter((c) => c.action === "start").length,
@@ -268,8 +317,12 @@ assert.equal(
   "One start request owns whole game",
 );
 await enabled("Try again");
-assert.equal(commands.filter(c => c.action === "ready").length, 5, "Each Jev shot releases exactly once without a button");
-assert.equal(commands.filter(c => c.action === "defend").length, 5);
+assert.equal(
+  commands.filter((c) => c.action === "ready").length,
+  5,
+  "Each Jev shot releases exactly once without a button",
+);
+assert.equal(commands.filter((c) => c.action === "defend").length, 5);
 assert.equal(games.at(-1).attempts, 10);
 assert.equal(games.at(-1).jevGoals, 0);
 assert.equal(await page.locator(".match-run-id").count(), 1);

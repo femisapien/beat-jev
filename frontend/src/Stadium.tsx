@@ -38,7 +38,7 @@ function Instances({
       args={[geometry, undefined, items.length]}
       receiveShadow
     >
-      <meshStandardMaterial color="#a5a9b5" roughness={0.95} />
+      <meshStandardMaterial color="#717985" roughness={0.95} />
     </instancedMesh>
   );
 }
@@ -59,7 +59,7 @@ function Turf() {
       map: color,
       normalMap: normal,
       normalScale: new THREE.Vector2(0.45, 0.45),
-      color: "#829774",
+      color: "#71917b",
       roughness: 1,
     });
     mat.onBeforeCompile = (shader) => {
@@ -360,20 +360,20 @@ export default function Stadium() {
   useEffect(() => {
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     scene.environment = hdr;
-    scene.environmentIntensity = 0.55;
+    scene.environmentIntensity = 0.45;
     return () => {
       scene.environment = null;
     };
   }, [hdr, scene]);
   return (
     <>
-      <color attach="background" args={["#b6c3cb"]} />
-      <fog attach="fog" args={["#b6c3cb", 60, 130]} />
-      <hemisphereLight args={["#e0edff", "#3c4129", 0.5]} />
+      <color attach="background" args={["#192538"]} />
+      <fog attach="fog" args={["#263345", 32, 95]} />
+      <hemisphereLight args={["#d2e4ff", "#2b3f32", 0.7]} />
       <directionalLight
         position={[-9, 18, 8]}
-        color="#fff1d6"
-        intensity={3.2}
+        color="#f3f5ff"
+        intensity={2.7}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-14}
@@ -385,7 +385,7 @@ export default function Stadium() {
       />
       <Turf />
       <Goal />
-      <Grandstand position={[0, 0.9, -17]} />
+      <Grandstand position={[0, 0.9, -23]} />
       <Grandstand position={[-30, 0.9, 15]} rotation={Math.PI / 2} />
       <Grandstand position={[30, 0.9, 15]} rotation={-Math.PI / 2} />
       <Boards />

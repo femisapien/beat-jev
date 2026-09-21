@@ -1,4 +1,4 @@
-import type { Aim, Kick, Shot } from "../../shared/types";
+import type { Aim, Kick, Shot, Positioning } from "../../shared/types";
 import { impactTime, endTime, flightPath } from "../../shared/flight";
 export type Playback = {
   number: number;
@@ -9,6 +9,7 @@ export type Playback = {
   startedAt: number;
   reaction?: Shot;
   keeperStartedAt?: number;
+  positioning?: Positioning;
 };
 export const impactMs = impactTime();
 export const endMs = endTime();

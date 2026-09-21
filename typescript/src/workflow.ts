@@ -1,7 +1,12 @@
-import { defaultKick, flightPath, observeBall } from "../../shared/flight";
+import {
+  defaultKick,
+  flightPath,
+  observeBall,
+  impactTime,
+} from "../../shared/flight";
 import { task } from "@renderinc/sdk/workflows";
 import { createMatch, changeMatch, readMatch } from "./store";
-import { decideKeeper, decideShot } from "./keeper";
+import { decideKeeper, decideShot, decidePosition } from "./keeper";
 import { record, submit, keeperMove, resolveShot } from "./game";
 import config from "../../shared/game.json";
 import {
@@ -12,7 +17,7 @@ import {
   saveAttack,
   waitForDefense,
 } from "./inputs";
-import type { Command, Shot } from "../../shared/types";
+import type { Command, Shot, Positioning } from "../../shared/types";
 const retry = { maxRetries: 2, waitDurationMs: 500, backoffScaling: 2 };
 const settings = { plan: "flex" as const, retry, timeoutSeconds: 120 };
 const parent = {
@@ -49,6 +54,29 @@ const playerKick = task(
     });
   },
 );
+const positionKeeper = task(
+  { ...settings, name: "position_goalkeeper" },
+  async (_ctx, cmd: Command) => {
+    const match = await readMatch(cmd.matchId, cmd.owner);
+    if (match.state.positioning?.number === cmd.number)
+      return match.state.positioning;
+    const positioning: Positioning = { number: cmd.number!, x: 0 };
+    try {
+      positioning.decision = await decidePosition(match.state.shots);
+      positioning.x =
+        config.positions[
+          positioning.decision.choice as keyof typeof config.positions
+        ];
+    } catch {
+      /* Neutral stance remains playable if the model is unavailable. */
+    }
+    return changeMatch(cmd.matchId, cmd.owner, (m) => {
+      if (m.state.positioning?.number !== cmd.number)
+        m.state.positioning = positioning;
+      return m.state.positioning;
+    });
+  },
+);
 const goalkeeperAction = task(
   { ...settings, name: "goalkeeper_action" },
   async (_ctx, cmd: Command) => {
@@ -56,6 +84,8 @@ const goalkeeperAction = task(
     if (!slot) return null;
     if (slot.reaction) return slot.reaction;
     const { aim, path, kick = defaultKick } = slot.input;
+    const positioning = (await readMatch(cmd.matchId, cmd.owner)).state
+      .positioning;
     const released = new Date(slot.released_at).getTime();
     const shot: Shot = {
       number: cmd.number!,
@@ -63,6 +93,7 @@ const goalkeeperAction = task(
       aim,
       path,
       kick,
+      positioning,
     };
     // Observe only after these frames have happened in the released shot.
     await new Promise((r) =>
@@ -89,7 +120,13 @@ const goalkeeperAction = task(
     shot.reactionMs = Date.now() - released;
     const choice =
       shot.reaction === "ready" ? shot.decision!.choice : "leave_wide";
-    Object.assign(shot, keeperMove(aim, choice), resolveShot(aim, choice));
+    const movement = keeperMove(
+      aim,
+      choice,
+      positioning?.x || 0,
+      impactTime(kick) - shot.reactionMs,
+    );
+    Object.assign(shot, movement, resolveShot(aim, choice, movement.keeper));
     return saveReaction(slot.id, shot);
   },
 );
@@ -184,7 +221,10 @@ const finishMatch = task(
 const takePenalty = task(
   { ...parent, name: "take_penalty" },
   async (ctx, cmd: Command) => {
-    const input = await ctx.run(prepareTurn, cmd);
+    const [input] = await Promise.all([
+      ctx.run(prepareTurn, cmd),
+      ...(cmd.number! % 2 ? [ctx.run(positionKeeper, cmd)] : []),
+    ]);
     const [kick, keeper] =
       cmd.number! % 2
         ? await Promise.all([

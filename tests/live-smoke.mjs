@@ -50,6 +50,12 @@ for (let number = 1; number <= 10; number++) {
   assert.ok(!g.incomingShot, "Jev target hidden until ready");
   let body;
   if (number % 2) {
+    assert.equal(g.positioning.number, number);
+    assert.ok(g.positioning.decision?.model.startsWith("jev"));
+    assert.equal(
+      g.positioning.decision.state.completedKicks.length,
+      (number - 1) / 2,
+    );
     body = {
       action: "shoot",
       matchId,
@@ -113,7 +119,7 @@ for (let number = 1; number <= 10; number++) {
         "Jev target cannot change on retry",
       );
     }
-    await pause(1480);
+    await pause(2200);
     const aim =
       number === 4
         ? { x: -shot.aim.x, y: shot.aim.y === 0.25 ? 0.76 : 0.25 }
@@ -135,7 +141,7 @@ for (let number = 1; number <= 10; number++) {
       assert.equal(shot.decision.state.observedMs, 160);
       assert.equal(shot.decision.state.ball.at(-1).ms, 160);
       assert.ok(
-        shot.reactionMs >= 340,
+        shot.reactionMs >= 1060,
         "Observation cannot precede run-up and observed flight",
       );
       assert.ok(
@@ -197,6 +203,12 @@ assert.ok(turns.every((t) => t.parentId === root.data.runId));
 for (let i = 0; i < 10; i++) {
   const t = turns[i],
     children = trace.spans.filter((s) => s.parentId === t.id);
+  if (t.number % 2)
+    assert.ok(
+      children.some(
+        (s) => s.name === "position_goalkeeper" && s.status === "completed",
+      ),
+    );
   const kick = children.find(
     (s) => s.name === (t.number % 2 ? "player_kick" : "jev_kick"),
   );

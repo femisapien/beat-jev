@@ -1,6 +1,7 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import * as THREE from "three";
+import { frameCamera } from "./camera";
 import Footballer from "./Footballer";
 import ShotInput from "./ShotInput";
 import Stadium from "./Stadium";
@@ -20,6 +21,7 @@ type Props = {
   reducedMotion: boolean;
   defending: boolean;
   humanKeeper: Aim;
+  keeperStance: number;
 };
 function Ball({
   flight,
@@ -74,18 +76,22 @@ function Ball({
 }
 function Scene(props: Props) {
   const { camera, size } = useThree();
-  useEffect(() => {
-    const cam = camera as THREE.PerspectiveCamera;
-    cam.position.set(0, 3.2, 12.5);
-    cam.lookAt(0, 1.25, -2);
-    cam.fov = Math.max(
-      32,
-      THREE.MathUtils.radToDeg(
-        2 * Math.atan(5.8 / (18.5 * (size.width / size.height))),
-      ),
+  useFrame(() => {
+    const elapsed = props.flight
+      ? performance.now() - props.flight.startedAt
+      : 0;
+    const progress =
+      props.flight && !props.reducedMotion
+        ? THREE.MathUtils.smoothstep(elapsed, 0, config.runupMs + 500)
+        : 0;
+    const follow = props.flight ? props.flight.aim.x * progress : 0;
+    frameCamera(
+      camera as THREE.PerspectiveCamera,
+      size.width / size.height,
+      progress,
+      follow,
     );
-    cam.updateProjectionMatrix();
-  }, [camera, size]);
+  });
   return (
     <>
       <Stadium />
@@ -98,6 +104,7 @@ function Scene(props: Props) {
         keeper
         human={props.defending}
         control={props.defending ? props.humanKeeper : undefined}
+        stance={props.keeperStance}
         flight={props.flight}
         reducedMotion={props.reducedMotion}
       />

@@ -1,6 +1,6 @@
 {
   "shots": 5,
-  "rulesVersion": "penalty-v5",
+  "rulesVersion": "penalty-v6",
   "question": "Choose a goalkeeper action using estimate.horizontalRange and estimate.heightRange, which are rough future goal-line ranges in metres inferred from 160 ms of observed flight. The real target is hidden. Curl can make the estimate wrong. Do NOT defend the ball's current position in the samples: it is still far from goal. Compare the ESTIMATED RANGE with the zones described below and choose the best coverage. Positive x means RIGHT on screen, negative x LEFT. Leave the ball only if the estimated range mostly misses the goal.",
   "zones": {
     "left_low": {
@@ -47,8 +47,8 @@
     "right_high": "Defend right high: estimated horizontalRange is positive x, between +1.1 and +3.66 metres; estimated heightRange is height between 1.22 and 2.44 metres.",
     "leave_wide": "Stay upright when the estimated range mostly falls outside x=-3.66 to +3.66 metres or height=0 to 2.44 metres. The estimate can be wrong."
   },
-  "reactionWindowMs": 850,
-  "runupMs": 180,
+  "reactionWindowMs": 1570,
+  "runupMs": 900,
   "readySeconds": 90,
   "shootQuestion": "You are Jev, taking a penalty against a human goalkeeper. Choose one target to score. You can see ONLY completed turns in history. Look for areas the goalkeeper leaves uncovered. With no history, choose a corner. The human has not moved for this turn: never claim to know their current position. Directions are from the shooter viewpoint, the same left and right as the screen. Return one attacking target.",
   "shootCriteria": {
@@ -59,5 +59,16 @@
     "right_low": "Shoot low right. Target x=0.62, y=0.25. Favor this target when completed goalkeeper movements leave it uncovered.",
     "right_high": "Shoot high right. Target x=0.62, y=0.76. Favor this target when completed goalkeeper movements leave it uncovered."
   },
-  "observationMs": 160
+  "observationMs": 160,
+  "positionQuestion": "Choose a starting position on the goal line before the next penalty. You can see only completedKicks. Repeated shots to one side are evidence to shade that side. Mixed or empty history favors the center. Moving left improves reach on the left but exposes the right, and vice versa. This is positioning, not a dive. The next shot is hidden.",
+  "positionCriteria": {
+    "shade_left": "Start 0.55 metres left of center when previous completed kicks repeatedly went left (negative x).",
+    "stay_center": "Stay in the center when history is empty, balanced, or unreliable.",
+    "shade_right": "Start 0.55 metres right of center when previous completed kicks repeatedly went right (positive x)."
+  },
+  "positions": {
+    "shade_left": -0.15,
+    "stay_center": 0,
+    "shade_right": 0.15
+  }
 }

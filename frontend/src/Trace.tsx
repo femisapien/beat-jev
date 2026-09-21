@@ -1,9 +1,16 @@
 import { useEffect, useState, useRef } from "react";
 import { Check, LoaderCircle, Circle, X } from "lucide-react";
-import type { Trace as TraceData, Shot, Span, Turn } from "../../shared/types";
+import type {
+  Trace as TraceData,
+  Shot,
+  Span,
+  Turn,
+  Positioning,
+} from "../../shared/types";
 import config from "../../shared/game.json";
 const labels: Record<string, string> = {
   prepare_turn: "Prepare turn",
+  position_goalkeeper: "Jev positioning",
   jev_kick: "Jev’s kick",
   player_save: "Your save",
   register_player: "Register player",
@@ -67,12 +74,14 @@ export default function Trace({
   waiting,
   turn,
   released,
+  positioning,
 }: {
   trace: TraceData | null;
   shot?: Shot;
   waiting?: boolean;
   turn?: Turn;
   released?: boolean;
+  positioning?: Positioning;
 }) {
   const [now, setNow] = useState(Date.now());
   const list = useRef<HTMLDivElement>(null);
@@ -132,7 +141,9 @@ export default function Trace({
               : trace?.status === "completed"
                 ? "Match run complete"
                 : running
-                  ? "Starting match…"
+                  ? turn
+                    ? "Preparing next turn…"
+                    : "Starting match…"
                   : "One match. One task tree."}
       </div>
       {trace && (
@@ -219,6 +230,44 @@ export default function Trace({
           </>
         )}
       </div>
+      {positioning && (
+        <details className="keeper-decision positioning-decision">
+          <summary>
+            <span>
+              Starting position
+              <b>
+                {positioning.x < 0
+                  ? "Shades left"
+                  : positioning.x > 0
+                    ? "Shades right"
+                    : "Stays central"}
+              </b>
+            </span>
+            <small>
+              {positioning.decision
+                ? `${positioning.decision.durationMs} ms`
+                : "Default"}
+            </small>
+          </summary>
+          <p className="decision-note">
+            Based on completed kicks. The next target is hidden.
+          </p>
+          <details className="decision-input">
+            <summary>Inputs and response</summary>
+            <pre>
+              {JSON.stringify(
+                {
+                  question: config.positionQuestion,
+                  criteria: config.positionCriteria,
+                  ...positioning.decision,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
+        </details>
+      )}
       {shot?.reaction && shot.shooter !== "jev" && (
         <div className="reaction-window">
           <span>
@@ -230,7 +279,8 @@ export default function Trace({
                 : "was unavailable"}
           </span>
           <strong>
-            {shot.reactionMs} / {config.reactionWindowMs} ms
+            {Math.max(0, (shot.reactionMs || 0) - config.runupMs)} /{" "}
+            {config.reactionWindowMs - config.runupMs} ms after contact
           </strong>
         </div>
       )}
@@ -238,7 +288,7 @@ export default function Trace({
         <details className="keeper-decision">
           <summary>
             <span>
-              {shot.shooter === "jev" ? "Jev’s shot" : "Jev’s save"}{" "}
+              {shot.shooter === "jev" ? "Jev’s shot" : "Jev’s reaction"}{" "}
               <b>
                 {choice === "leave_wide"
                   ? "Leave it"

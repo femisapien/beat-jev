@@ -1,10 +1,21 @@
 import config from "../../shared/game.json";
 import type { Aim, Game, Match, Shot, State } from "../../shared/types";
 export const zones = config.zones as Record<string, Aim & { label: string }>;
-export function keeperMove(aim: Aim, choice: string) {
+export function keeperMove(
+  aim: Aim,
+  choice: string,
+  startX = 0,
+  availableMs = 1000,
+) {
   const hold = choice === "leave_wide";
-  const keeper = hold ? { x: 0, y: 0.4 } : zones[choice];
-  if (!keeper) throw new Error("Invalid keeper action.");
+  const target = hold ? { x: startX, y: 0.4 } : zones[choice];
+  if (!target) throw new Error("Invalid keeper action.");
+  // A short push-off, then at most 4.8 m/s lateral travel. Starting stance matters.
+  const reach = (Math.max(0, availableMs - 100) * 0.0048) / 3.66;
+  const keeper = {
+    x: Math.max(startX - reach, Math.min(startX + reach, target.x)),
+    y: target.y,
+  };
   return { keeper, keeperAction: hold ? ("hold" as const) : ("dive" as const) };
 }
 export function resolveShot(
@@ -80,6 +91,7 @@ export function publicGame(
       .length,
     totalAttempts: totals.attempts,
     totalGoals: totals.goals,
+    positioning: match.state.positioning,
   };
 }
 

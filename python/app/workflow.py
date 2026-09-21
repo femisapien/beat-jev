@@ -2,9 +2,9 @@ import asyncio
 from datetime import datetime, timezone
 from render import Retry, TaskContext, Workflows
 from app.store import create_match, change_match, read_match
-from app.keeper import decide_keeper, decide_shot
+from app.keeper import decide_keeper, decide_shot, decide_position
 from app.game import record, submit, keeper_move, resolve_shot, CONFIG
-from app.flight import DEFAULT_KICK, flight_path, observe_ball
+from app.flight import DEFAULT_KICK, flight_path, observe_ball, impact_time
 from app.inputs import (
     wait_for_input,
     read_input,
@@ -52,6 +52,27 @@ async def player_kick(ctx: TaskContext, cmd: dict):
 
 
 @app.task
+async def position_goalkeeper(ctx: TaskContext, cmd: dict):
+    match = await read_match(cmd["matchId"], cmd["owner"])
+    previous = match["state"].get("positioning")
+    if previous and previous["number"] == cmd["number"]:
+        return previous
+    positioning = dict(number=cmd["number"], x=0)
+    try:
+        positioning["decision"] = await decide_position(match["state"]["shots"])
+        positioning["x"] = CONFIG["positions"][positioning["decision"]["choice"]]
+    except Exception:
+        pass  # Neutral stance remains playable if the model is unavailable.
+
+    def save(m):
+        if (m["state"].get("positioning") or {}).get("number") != cmd["number"]:
+            m["state"]["positioning"] = positioning
+        return m["state"]["positioning"]
+
+    return await change_match(cmd["matchId"], cmd["owner"], save)
+
+
+@app.task
 async def goalkeeper_action(ctx: TaskContext, cmd: dict):
     slot = await wait_for_input(cmd, "keeper")
     if not slot:
@@ -61,13 +82,23 @@ async def goalkeeper_action(ctx: TaskContext, cmd: dict):
     aim, path = slot["input"]["aim"], slot["input"]["path"]
 
     kick = slot["input"].get("kick", DEFAULT_KICK)
+    positioning = (await read_match(cmd["matchId"], cmd["owner"]))["state"].get(
+        "positioning"
+    )
 
     def elapsed():
         return round(
             (datetime.now(timezone.utc) - slot["released_at"]).total_seconds() * 1000
         )
 
-    shot = dict(number=cmd["number"], shooter="player", aim=aim, path=path, kick=kick)
+    shot = dict(
+        number=cmd["number"],
+        shooter="player",
+        aim=aim,
+        path=path,
+        kick=kick,
+        positioning=positioning,
+    )
     # Do not observe simulated frames before their release time has elapsed.
     observe_after = CONFIG["runupMs"] + CONFIG["observationMs"]
     await asyncio.sleep(max(0, observe_after - elapsed()) / 1000)
@@ -75,7 +106,9 @@ async def goalkeeper_action(ctx: TaskContext, cmd: dict):
     try:
         if remaining <= 0:
             raise TimeoutError("Deadline passed.")
-        shot["decision"] = await decide_keeper(observe_ball(aim, kick), remaining / 1000)
+        shot["decision"] = await decide_keeper(
+            observe_ball(aim, kick), remaining / 1000
+        )
         shot["reaction"] = (
             "ready" if elapsed() <= CONFIG["reactionWindowMs"] else "late"
         )
@@ -85,8 +118,15 @@ async def goalkeeper_action(ctx: TaskContext, cmd: dict):
         )
     shot["reactionMs"] = elapsed()
     choice = shot["decision"]["choice"] if shot["reaction"] == "ready" else "leave_wide"
-    shot.update(keeper_move(aim, choice))
-    shot.update(resolve_shot(aim, choice))
+    shot.update(
+        keeper_move(
+            aim,
+            choice,
+            (positioning or {}).get("x", 0),
+            impact_time(kick) - shot["reactionMs"],
+        )
+    )
+    shot.update(resolve_shot(aim, choice, shot["keeper"]))
     return await save_reaction(str(slot["id"]), shot)
 
 
@@ -185,7 +225,10 @@ async def finish_match(ctx: TaskContext, cmd: dict):
 
 @app.task(retry=Retry(max_retries=0, wait_duration_ms=500), timeout_seconds=180)
 async def take_penalty(ctx: TaskContext, cmd: dict):
-    inputs = await ctx.run(prepare_turn, cmd)
+    preparing = [ctx.run(prepare_turn, cmd)]
+    if cmd["number"] % 2:
+        preparing.append(ctx.run(position_goalkeeper, cmd))
+    inputs = (await asyncio.gather(*preparing))[0]
     if cmd["number"] % 2:
         kick, keeper = await asyncio.gather(
             ctx.run(player_kick, inputs), ctx.run(goalkeeper_action, inputs)

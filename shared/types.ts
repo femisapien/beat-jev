@@ -22,12 +22,15 @@ export type Shot = {
   keeperAction?: "dive" | "hold";
   committedAt?: string;
   releasedAt?: number;
+  positioning?: Positioning;
 };
+export type Positioning = { number: number; x: number; decision?: Decision };
 export type State = {
   shots: Shot[];
   finished: boolean;
   started?: boolean;
   abandoned?: boolean;
+  positioning?: Positioning;
 };
 export type Match = {
   id: string;
@@ -52,6 +55,7 @@ export type Game = {
   activeShot?: Shot;
   incomingShot?: Shot;
   serverNow?: number;
+  positioning?: Positioning;
 };
 export type Command = {
   matchId: string;

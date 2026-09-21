@@ -4,6 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import * as THREE from "three";
 import config from "../../shared/game.json";
+import { impactTime } from "../../shared/flight";
 import type { Aim } from "../../shared/types";
 import { keeperMotion, type Playback } from "./playback";
 
@@ -12,12 +13,14 @@ export default function Footballer({
   keeper = false,
   human = !keeper,
   control,
+  stance = 0,
   flight,
   reducedMotion,
 }: {
   keeper?: boolean;
   human?: boolean;
   control?: Aim;
+  stance?: number;
   flight: Playback | null;
   reducedMotion: boolean;
 }) {
@@ -122,84 +125,149 @@ export default function Footballer({
     bone.quaternion.premultiply(temp.delta);
     bone.updateMatrixWorld(true);
   }
-  useFrame(({ clock }) => {
+  const position = useRef(0);
+  useFrame(({ clock }, dt) => {
     if (!actor.current) return;
+    const root = actor.current;
     const now = performance.now();
-    const motion = keeperMotion(flight, now, reducedMotion);
-    const target = control || motion?.target;
-    const dive = keeper ? (control ? 1 : motion?.progress || 0) : 0;
-    const low = !!target && target.y < 0.4;
-    const direction = control ? 0 : Math.sign(target?.x || 0);
-    const armReach = control ? (control.y > 0.5 ? 1 : 0) : dive;
     const elapsed = flight
       ? reducedMotion
-        ? 1000
-        : now - flight.startedAt
+        ? impactTime(flight.kick)
+        : Math.max(0, now - flight.startedAt)
       : 0;
-    const windup = Math.min(1, elapsed / config.runupMs);
-    const follow = Math.min(1, Math.max(0, elapsed - config.runupMs) / 650);
-    const leg = !flight
-      ? 0
-      : elapsed <= config.runupMs
-        ? windup < 0.42
-          ? (windup / 0.42) * 0.35
-          : THREE.MathUtils.lerp(0.35, -0.62, (windup - 0.42) / 0.58)
-        : follow < 0.2
-          ? THREE.MathUtils.lerp(-0.62, -1.05, follow / 0.2)
-          : THREE.MathUtils.lerp(-1.05, 0, (follow - 0.2) / 0.8);
-    const kick = Math.abs(leg);
-    actor.current.position.set(keeper ? 0 : -0.2, 0.02, keeper ? -5.78 : 5.17);
-    actor.current.rotation.set(0, keeper ? 0 : Math.PI, 0);
+    const clamp = THREE.MathUtils.clamp;
+    const lerp = THREE.MathUtils.lerp;
+    const smooth = (x: number) => {
+      const t = clamp(x, 0, 1);
+      return t * t * (3 - 2 * t);
+    };
+    const idle = reducedMotion ? 0 : clock.elapsedTime;
+    const motion = control ? null : keeperMotion(flight, now, reducedMotion);
     for (const [bone, q] of rig.rest) bone.quaternion.copy(q);
+    root.position.set(0, 0.02, keeper ? -5.78 : 6.8);
+    root.rotation.set(0, keeper ? 0 : Math.PI, 0);
     rig.object.updateMatrixWorld(true);
-    rotate(
-      "upperarm_l",
-      keeper ? -0.18 - (low ? dive * 0.6 : 0) : 0,
-      0,
-      keeper ? -0.12 + armReach * (low && !direction ? 0.3 : 2.25) : -0.52,
-    );
-    rotate(
-      "upperarm_r",
-      keeper ? -0.18 - (low ? dive * 0.6 : 0) : 0,
-      0,
-      keeper ? 0.12 - armReach * (low && !direction ? 0.3 : 2.25) : 0.52,
-    );
-    rotate("lowerarm_l", keeper ? dive * 0.7 : 0.72, 0, 0);
-    rotate("lowerarm_r", keeper ? dive * 0.7 : 0.72, 0, 0);
-    rotate("thigh_l", keeper ? -0.24 : 0, 0, keeper ? -0.12 : 0);
-    rotate("thigh_r", keeper ? -0.24 : leg, 0, keeper ? 0.12 : 0);
-    rotate("calf_l", keeper ? 0.38 : 0);
-    rotate(
-      "calf_r",
-      keeper ? 0.38 : flight ? Math.max(0, 0.7 * (1 - windup)) : 0,
-    );
-    rotate("spine_01", keeper ? -0.08 : -0.1 - kick * 0.1);
-    rotate("head", keeper ? 0 : 0.08);
-    if (keeper) {
-      actor.current.position.y = 0.02;
-      actor.current.rotation.z = -direction * dive * (low ? 1.45 : 1.02);
-      if (!direction)
-        actor.current.rotation.x = (low ? (control ? 0.45 : 0.85) : 0) * dive;
-      actor.current.updateMatrixWorld(true);
-      if (dive > 0 && target) {
-        const left = rig.object.getObjectByName("hand_l")!,
-          right = rig.object.getObjectByName("hand_r")!;
-        left.getWorldPosition(temp.l);
-        right.getWorldPosition(temp.r);
+
+    if (!keeper) {
+      const approach = flight
+        ? clamp(elapsed / (config.runupMs * 0.78), 0, 1)
+        : 0;
+      const plant = flight
+        ? smooth((elapsed / config.runupMs - 0.7) / 0.12)
+        : 0;
+      const swing = flight
+        ? smooth((elapsed / config.runupMs - 0.85) / 0.15)
+        : 0;
+      const follow = flight ? smooth((elapsed - config.runupMs) / 500) : 0;
+      const stride = Math.sin(approach * Math.PI * 3) * (1 - plant);
+      const rightLeg =
+        stride * 0.52 + plant * lerp(0.65, -0.63, swing) * (1 - follow);
+      const leftLeg = -stride * 0.52 - plant * 0.12 + follow * 0.1;
+      const heading = flight ? Math.atan2(flight.aim.x * 3.66, 10.5) : 0;
+      root.position.set(
+        lerp(-0.82, -0.19, approach),
+        0.02,
+        lerp(6.8, 5.05, approach) - follow * 0.35,
+      );
+      root.rotation.y = Math.PI - lerp(0.32, heading * 0.7, approach);
+      rotate("thigh_l", leftLeg);
+      rotate("thigh_r", rightLeg);
+      rotate("calf_l", Math.max(0, stride) * 0.95 + plant * 0.08);
+      rotate("calf_r", Math.max(0, -stride) * 0.95 + plant * (1 - swing) * 0.9);
+      rotate("foot_r", -swing * (1 - follow) * 0.18);
+      rotate(
+        "upperarm_l",
+        stride * 0.38 - plant * 0.18,
+        0,
+        -0.46 + plant * 0.18,
+      );
+      rotate("upperarm_r", -stride * 0.38, 0, 0.46 - plant * 0.1);
+      rotate(
+        "lowerarm_l",
+        (flight ? 0.25 + follow * 0.35 : 0.6) - plant * 0.25,
+      );
+      rotate("lowerarm_r", flight ? 0.25 + follow * 0.35 : 0.6);
+      rotate("spine_01", -0.04 - approach * 0.13 + follow * 0.12, -swing * 0.1);
+      rotate("head", 0.08, heading * 0.2);
+      root.position.y += flight
+        ? Math.abs(stride) * 0.055
+        : Math.sin(idle * 2.4) * 0.008;
+    } else {
+      const previousX = position.current;
+      const desiredX = control ? control.x * 3.66 : stance * 3.66;
+      position.current = reducedMotion
+        ? desiredX
+        : THREE.MathUtils.damp(position.current, desiredX, 7, dt);
+      const moving = Math.min(
+        1,
+        Math.abs(position.current - previousX) / Math.max(dt, 0.001),
+      );
+      const shuffle = reducedMotion ? 0 : Math.sin(idle * 5.2);
+      const settle = flight ? 1 - smooth(elapsed / config.runupMs) : 1;
+      const step = shuffle * (0.14 * settle + moving * 0.12);
+      const landing = flight
+        ? smooth((elapsed - impactTime(flight.kick)) / 450)
+        : 0;
+      const recover = flight
+        ? smooth((elapsed - impactTime(flight.kick) - 500) / 600)
+        : 0;
+      const dive = (motion?.progress || 0) * (1 - recover);
+      const target = motion?.target;
+      const direction = Math.sign((target?.x || 0) * 3.66 - desiredX);
+      const low = !!target && target.y < 0.4;
+      const jump = control ? smooth((control.y - 0.25) / 0.51) : 0;
+      const split =
+        flight && elapsed < config.runupMs + 140
+          ? Math.sin(
+              clamp((elapsed - config.runupMs + 150) / 290, 0, 1) * Math.PI,
+            ) * 0.05
+          : 0;
+      root.position.x = position.current + step * settle;
+      root.position.y = -0.055 + Math.abs(step) * 0.3 + split + jump * 0.38;
+      rotate("thigh_l", -0.48 + step * 1.8, 0, 0.23 - dive * 0.1);
+      rotate("thigh_r", -0.48 - step * 1.8, 0, -0.23 + dive * 0.1);
+      rotate("calf_l", 0.82 + step * 1.2 - dive * 0.55);
+      rotate("calf_r", 0.82 - step * 1.2 - dive * 0.35);
+      rotate("spine_01", -0.16 + dive * 0.12);
+      rotate("head", 0.12);
+      const reach = Math.max(jump, dive);
+      rotate(
+        "upperarm_l",
+        -0.18 - (low ? dive * 0.3 : 0),
+        0,
+        -0.42 + reach * 2.1,
+      );
+      rotate(
+        "upperarm_r",
+        -0.18 - (low ? dive * 0.3 : 0),
+        0,
+        0.42 - reach * 2.1,
+      );
+      rotate("lowerarm_l", 0.1 * (1 - reach) + dive * 0.18);
+      rotate("lowerarm_r", 0.1 * (1 - reach) + dive * 0.18);
+      if (motion && target) {
+        root.rotation.z =
+          -direction * dive * (low ? 1.42 : 1.14 + landing * 0.28);
+        if (!direction) root.rotation.x = (low ? 0.65 : 0) * dive;
+        root.updateMatrixWorld(true);
+        rig.object.getObjectByName("hand_l")!.getWorldPosition(temp.l);
+        rig.object.getObjectByName("hand_r")!.getWorldPosition(temp.r);
         temp.p.copy(temp.l).add(temp.r).multiplyScalar(0.5);
-        actor.current.position.x += (target.x * 3.66 - temp.p.x) * dive;
-        actor.current.position.y = Math.max(
-          control && control.y > 0.5 ? 0.24 : 0.02,
-          actor.current.position.y + (target.y * 2.44 - temp.p.y) * dive,
+        const targetY = lerp(target.y * 2.44, 0.25, landing);
+        root.position.x += (target.x * 3.66 - temp.p.x) * dive;
+        root.position.y = Math.max(
+          0.02,
+          root.position.y + (targetY - temp.p.y) * dive,
         );
       }
-    } else {
-      actor.current.position.z -= flight
-        ? Math.sin(Math.min(1, elapsed / 850) * Math.PI) * 0.1
-        : 0;
     }
-    if (!flight && !reducedMotion)
-      actor.current.position.y += Math.sin(clock.elapsedTime * 2) * 0.008;
+    // Ground the support foot through the approach and keeper's ready stance.
+    if ((!keeper || !motion) && !(control && control.y > 0.5)) {
+      root.updateMatrixWorld(true);
+      rig.object.getObjectByName("foot_l")!.getWorldPosition(temp.l);
+      rig.object.getObjectByName("foot_r")!.getWorldPosition(temp.r);
+      root.position.y += 0.095 - Math.min(temp.l.y, temp.r.y);
+    }
   });
   return (
     <group ref={actor}>
